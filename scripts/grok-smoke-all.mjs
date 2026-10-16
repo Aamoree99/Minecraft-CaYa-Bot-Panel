@@ -269,9 +269,10 @@ async function main() {
   for (const t of templates) {
     try {
       const r = await req("POST", `/rules/templates/${encodeURIComponent(t)}`, { botIds: [botId] });
-      ok(`şablon: ${r.name}`);
+      fail(`removed template ${t}`, `unexpected creation: ${r.name}`);
     } catch (e) {
-      fail(`şablon ${t}`, e.message);
+      if (e.status === 404) ok(`removed template rejected: ${t}`);
+      else fail(`removed template ${t}`, e.message);
     }
   }
 

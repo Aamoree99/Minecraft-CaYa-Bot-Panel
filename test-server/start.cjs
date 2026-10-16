@@ -20,7 +20,7 @@ mc.createMCServer({
   logging: true,
   gameMode: 0,
   difficulty: 0,
-  worldFolder: path.join(__dirname, WORLD),
+  worldFolder: path.isAbsolute(WORLD) ? WORLD : path.join(__dirname, WORLD),
   generation: { name: "superflat", options: {} },
   kickTimeout: 30000,
   plugins: {},

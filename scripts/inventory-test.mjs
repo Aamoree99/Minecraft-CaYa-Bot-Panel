@@ -98,7 +98,7 @@ async function main() {
       await req("POST", `/bots/${id}/inventory`, { op: "equip", slot: helm0.slot });
       fail("Yasak kontrolü", "yasaklı kask kuşanılabildi!");
     } catch (e) {
-      if (e.status === 400 && /yasaklı/i.test(e.message)) ok(`Yasaklı eşya reddedildi: "${e.message}"`);
+      if (e.status === 400 && /yasaklı|banned/i.test(e.message)) ok(`Yasaklı eşya reddedildi: "${e.message}"`);
       else fail("Yasak kontrolü", `beklenmedik hata: ${e.status} ${e.message}`);
     }
 
@@ -108,7 +108,7 @@ async function main() {
       await req("POST", `/bots/${id}/inventory`, { op: "toss", slot: dirt0.slot, amount: 1 });
       fail("Koruma kontrolü", "korunan dirt atılabildi!");
     } catch (e) {
-      if (e.status === 400 && /koruma/i.test(e.message)) ok(`Korunan eşya atma reddedildi: "${e.message}"`);
+      if (e.status === 400 && /koruma|kept/i.test(e.message)) ok(`Korunan eşya atma reddedildi: "${e.message}"`);
       else fail("Koruma kontrolü", `beklenmedik hata: ${e.status} ${e.message}`);
     }
 

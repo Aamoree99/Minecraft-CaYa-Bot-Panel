@@ -51,8 +51,8 @@ async function main() {
   const server = await req("POST", "/servers", {
     name: "FullSuite",
     host: "127.0.0.1",
-    port: 25566,
-    version: "1.16.1"
+    port: Number(process.env.CAYA_TEST_MC_PORT || 25566),
+    version: process.env.CAYA_TEST_MC_VERSION || "1.16.1"
   });
   ok("sunucu profili");
 
@@ -123,8 +123,14 @@ async function main() {
   ok("rule dry-test");
 
   // unauthorized would not fire — just ensure engine loaded
-  const tpl = await req("POST", `/rules/templates/${encodeURIComponent("Yemek nöbetçisi")}`, { botIds: [id] });
-  ok(`template: ${tpl.name}`);
+  // Stock blueprints were intentionally removed; reject obsolete template names.
+  try {
+    await req("POST", `/rules/templates/${encodeURIComponent("Yemek nöbetçisi")}`, { botIds: [id] });
+    fail("removed template should be rejected");
+  } catch (e) {
+    if (e.status === 404) ok("removed template correctly rejected (404)");
+    else fail("removed template", e.message);
+  }
 
   // task pause/resume endpoints
   await req("POST", `/bots/${id}/tasks/pause`);

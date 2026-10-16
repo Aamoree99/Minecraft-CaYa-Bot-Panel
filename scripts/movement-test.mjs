@@ -120,9 +120,10 @@ async function main() {
     await sleep(2500);
     const f = await getBot(id2);
     const followLabel = f.tasks.current?.progress?.label ?? "";
-    if (followLabel.includes("görünmüyor")) {
+    if (process.env.CAYA_TEST_SKIP_FOLLOW === "1" || followLabel.includes("görünmüyor") || followLabel.includes("not visible")) {
       console.log("  ⚠️ ATLANDI: takip fiziği — flying-squid oyuncu varlığı yayınlamıyor; Paper'da doğrulanacak");
-      ok("Takip görevi düzgün bekleme durumunda (oyuncu görünmüyor — sonsuz döngü/çökme yok)");
+      if (f.combat?.companion?.followPlayer === "CaYaMove_1") ok("Follow command registered; physical follow explicitly NOT TESTED");
+      else fail("Follow registration", JSON.stringify(f.combat?.companion));
     } else {
       await req("POST", `/bots/${id1}/action`, { type: "goto", x: wp.x - 14, y: wp.y, z: wp.z, range: 2 });
       await waitFor("takipçi lidere yaklaşsın", async () => {
@@ -136,7 +137,7 @@ async function main() {
     await req("POST", `/bots/${id2}/action`, { type: "stop" });
     await sleep(2000);
     const b2 = await getBot(id2);
-    if (!b2.tasks.current && b2.tasks.queue.length === 0) ok("Durdur: takip görevi iptal edildi, kuyruk boş");
+    if (!b2.tasks.current && b2.tasks.queue.length === 0 && !b2.combat?.companion?.followPlayer) ok("Durdur: takip görevi iptal edildi, kuyruk boş");
     else fail("Durdur", JSON.stringify(b2.tasks));
 
     // --- hatalı hedef: ulaşılmaz nokta (çok uzak) hızlı ve düzgün hata vermeli mi?
