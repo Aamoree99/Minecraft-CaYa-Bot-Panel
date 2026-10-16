@@ -1,3 +1,4 @@
+import { usable, workspace } from "../worker/policy";
 import type { Bot } from "mineflayer";
 import type { Entity } from "prismarine-entity";
 import { Vec3 } from "vec3";
@@ -2171,9 +2172,10 @@ private async fleeFrom(from: { x: number; y: number; z: number }, dist: number, 
     const ty = pos.y;
     try {
       await runGoto(this.instance, tx, ty, tz, 2, token, () => {});
-    } catch {
-      /* path fail — still ok for flee attempt */
+    } catch (error) {
+      throw new Error(`RETREAT_FAILED: ${error instanceof Error ? error.message : String(error)}`);
     }
+    if (bot.entity.position.distanceTo(from as never) < Math.hypot(dx,dz)+4) throw new Error("RETREAT_FAILED: no verified separation from threat");
   }
 
   /**
@@ -2185,13 +2187,13 @@ private async fleeFrom(from: { x: number; y: number; z: number }, dist: number, 
     if (!bot) return;
     this.bot = bot;
     const banned = this.instance.config.inventory.bannedItems;
-    const items = bot.inventory.items();
+    const items = bot.inventory.items().filter(i=>usable(i,bot.registry,workspace?.minDurability??8)).sort((a,b)=>(a.durabilityUsed??0)-(b.durabilityUsed??0));
     const names = items.map((i) => i.name);
     const best = pickBestWeaponName(names, banned);
     const held = bot.heldItem?.name;
 
     // zaten en iyi silah
-    if (best && held === best && !force) return;
+    if (best && held === best && !force && bot.heldItem && usable(bot.heldItem,bot.registry,workspace?.minDurability??8)) return;
 
     // elde silah var ve en iyisi yoksa (veya sadece alet) — silah tercih
     if (!best) {
@@ -2213,7 +2215,7 @@ private async fleeFrom(from: { x: number; y: number; z: number }, dist: number, 
     }
 
     // elde zaten silah ve best alet yedekse — kılıç tercih et (best zaten en yüksek skor)
-    if (held === best) return;
+    if (held === best && bot.heldItem && usable(bot.heldItem,bot.registry,workspace?.minDurability??8)) return;
 
     const item = items.find((i) => i.name === best);
     if (!item) return;
@@ -2241,7 +2243,7 @@ private async fleeFrom(from: { x: number; y: number; z: number }, dist: number, 
     const bot = this.bot ?? this.instance.bot;
     if (!bot) return;
     const held = bot.heldItem?.name;
-    if (held && isMeleeWeapon(held)) return;
+    if (held && isMeleeWeapon(held) && bot.heldItem && usable(bot.heldItem,bot.registry,workspace?.minDurability??8)) return;
     await this.equipBestWeapon(true);
   }
 

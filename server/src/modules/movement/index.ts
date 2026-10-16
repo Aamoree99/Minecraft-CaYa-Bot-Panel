@@ -1,3 +1,4 @@
+import { guardMovements, assertPosition } from "../worker/policy";
 import { safeDropLimit, unexpectedFall } from "./safety";
 import type { Bot } from "mineflayer";
 import { Movements, goals, pathfinder } from "mineflayer-pathfinder";
@@ -191,6 +192,7 @@ export function ensureMovement(instance: BotInstance, opts?: EnsureMovementOpts)
   }
 
   patchMovementsForTurningLadders(movements);
+  guardMovements(movements);
   bot.pathfinder.setMovements(movements);
   try {
     const pf = bot.pathfinder as unknown as { thinkTimeout?: number };
@@ -446,6 +448,7 @@ export async function runGoto(
   report: ProgressFn,
   options?: GotoOptions
 ): Promise<void> {
+  assertPosition({x,y,z},instance.runtime.dimension);
   const bot = requireBot(instance);
   const dist = Math.round(bot.entity.position.distanceTo({ x, y, z } as never));
   const startY=bot.entity.position.y;
@@ -492,6 +495,7 @@ export async function runGotoXZ(
   options?: GotoOptions
 ): Promise<void> {
   const bot = requireBot(instance);
+  assertPosition({x,y:bot.entity.position.y,z},instance.runtime.dimension);
   const dist = Math.round(Math.hypot(bot.entity.position.x - x, bot.entity.position.z - z));
   report({ done: 0, total: dist, label: `searching on surface (${dist} blocks)` });
 

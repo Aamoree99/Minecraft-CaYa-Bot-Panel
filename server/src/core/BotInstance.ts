@@ -1,3 +1,4 @@
+import { attachWorkspace, assertPosition } from "../modules/worker/policy";
 import { enableAuthMe } from "./authme";
 import { detachUntilEnd } from "./botCleanup";
 import { EventEmitter } from "events";
@@ -457,6 +458,7 @@ export class BotInstance extends EventEmitter {
    */
   enqueueAction(action: Record<string, unknown>): TaskSummary | null {
     const type = String(action.type ?? "");
+    if(action.x != null && action.y != null && action.z != null) assertPosition({x:Number(action.x),y:Number(action.y),z:Number(action.z)},this.runtime.dimension);
     if (this.config.combat.hunter?.enabled && !["chat", "stop", "stop-combat", "cancel-task"].includes(type)) {
       throw new Error("Hunter modu açık: diğer işlemler kilitli, LLM yalnızca sohbet edebilir");
     }
@@ -1017,6 +1019,7 @@ export class BotInstance extends EventEmitter {
     this.bot = bot;
     enableAuthMe(bot, this.config.username);
     this.hookBotEvents(bot);
+    attachWorkspace(this,bot);
   }
 
   private hookBotEvents(bot: Bot) {
