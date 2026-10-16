@@ -7,7 +7,7 @@ import { PRIORITY, type TaskToken, type ProgressFn } from "../../core/TaskQueue"
 import { runGoto } from "../movement";
 import { runSmartCollectBlock } from "../gather/smartGather";
 import { runSmartCraftInline } from "../craft/smartCraft";
-import { depositToChest, withdrawFromChest } from "../inventory/chestOps";
+import { depositToChest, withdrawFromChest, readChestStock } from "../inventory/chestOps";
 import { workspace, owned, usable, type Point, type Workspace } from "./policy";
 export type Job = {
     mode: "miner" | "farmer" | "warehouse" | "crafter" | "return";
@@ -42,6 +42,9 @@ export function category(name: string): string | undefined { if (name === "stick
     return "FOOD"; if (/(_pickaxe|_axe|_shovel|_hoe|_sword|_helmet|_chestplate|_leggings|_boots)$/.test(name))
     return "TOOLS"; if (/(stone|cobblestone|granite|diorite|andesite|deepslate|gravel|sand|dirt)/.test(name))
     return "STONE"; return undefined; }
+export function recipeDeficit(recipe: {delta: Array<{id:number,count:number}>}, name: (id:number)=>string, available:(item:string)=>number):number {
+    return recipe.delta.filter(d=>d.count<0).reduce((sum,d)=>sum+Math.max(0,-d.count-available(name(d.id))),0);
+}
 export class WorkerService {
     private ledger: any;
     private file: string;
@@ -153,6 +156,7 @@ export class WorkerService {
                     await this.instance.combat.equipBestWeapon();
                     const before = count(job.item);
                     let result = "";
+                    const stockCache = new Map<string, Record<string,number>>();
                     const supply = async (item: string, needed: number, depth = 0): Promise<void> => {
                         check();
                         if (count(item) >= needed)
@@ -163,6 +167,7 @@ export class WorkerService {
                         if (p) {
                             try {
                                 await withdrawFromChest(this.instance, { ...p, item, count: needed - count(item) }, token, report);
+                                stockCache.delete(category(item)??"");
                             }
                             catch (e) {
                                 note("SUPPLY_WITHDRAW", { item, error: String(e) });
@@ -172,7 +177,12 @@ export class WorkerService {
                             return;
                         const def = bot.registry.itemsByName[item];
                         const recipes = def ? bot.recipesAll(def.id, null, true) : [];
-                        const recipe = recipes.sort((a, b) => a.delta.filter(d => d.count < 0).reduce((n, d) => n + Math.max(0, -d.count - count(bot.registry.items[d.id]?.name ?? "")), 0) - b.delta.filter(d => d.count < 0).reduce((n, d) => n + Math.max(0, -d.count - count(bot.registry.items[d.id]?.name ?? "")), 0))[0];
+                        for (const c of new Set(recipes.flatMap(r=>r.delta.filter(d=>d.count<0).map(d=>category(bot.registry.items[d.id]?.name??""))))) {
+                            if(c && c!=="TOOLS" && w.containers[c] && !stockCache.has(c))
+                                stockCache.set(c,await readChestStock(this.instance,w.containers[c],token,report));
+                        }
+                        const available=(name:string)=>count(name)+(stockCache.get(category(name)??"")?.[name]??0);
+                        const recipe = recipes.sort((a,b)=>recipeDeficit(a,id=>bot.registry.items[id]?.name??"",available)-recipeDeficit(b,id=>bot.registry.items[id]?.name??"",available))[0];
                         if (!recipe)
                             throw Error(`MISSING_MATERIAL: ${item} (${count(item)}/${needed})`);
                         const output = recipe.delta.find(d => d.id === def.id && d.count > 0)?.count ?? 1, operations = Math.ceil((needed - count(item)) / output);

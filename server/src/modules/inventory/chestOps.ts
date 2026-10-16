@@ -309,3 +309,19 @@ export async function withdrawFromChest(
   report({ done: 1, total: 1, label: `withdrew ${item}×${got}` });
   return got;
 }
+
+
+/** Read a designated container through the same bounded, confirmed window path. */
+export async function readChestStock(instance: BotInstance, spec: ChestTargetSpec, token: TaskToken, report: ProgressFn): Promise<Record<string, number>> {
+  const bot = requireBot(instance), block = resolveContainerBlock(instance, spec);
+  await runGoto(instance, block.position.x, block.position.y, block.position.z, 2, token, report);
+  if (token.cancelled) throw Error(token.reason ?? "cancelled");
+  const win = await openContainerSafe(bot, block, token);
+  try {
+    await confirmWindow(bot, win, token);
+    emitChestMemory(instance, block.position, win);
+    const stock: Record<string, number> = {};
+    for (const item of win.containerItems?.() ?? []) stock[item.name] = (stock[item.name] ?? 0) + item.count;
+    return stock;
+  } finally { win.close(); }
+}

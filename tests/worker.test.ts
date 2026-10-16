@@ -29,3 +29,14 @@ test("mining replaces faster exhausted tool with slower usable harvest tool",asy
 test("worker search cannot span a protected structure hidden between valid corners",()=>{const protectedSpace=parseWorkspace({...w,dimension:"overworld",protected:[{min:{x:961,y:200,z:960},max:{x:961,y:202,z:960}}]});assert.throws(()=>parseJob({mode:"miner",origin:{x:960,y:201,z:960},radius:4},protectedSpace),/protected holes/);});
 
 test("malformed and nonfinite worker origins fail before coordinate iteration",()=>{for(const origin of ["bad",{}, {x:Infinity,y:201,z:960},{x:NaN,y:201,z:960}])assert.throws(()=>parseJob({mode:"miner",origin},w));});
+
+
+test("recipe selection accounts for assigned stock rather than arbitrary wood variant order",async()=>{
+ const {recipeDeficit}=await import("../server/src/modules/worker");
+ const names:Record<number,string>={1:"poplar_planks",2:"oak_planks",3:"stick"};
+ const recipes=[{kind:"poplar",delta:[{id:1,count:-3},{id:3,count:-2}]},{kind:"oak",delta:[{id:2,count:-3},{id:3,count:-2}]}];
+ const stock:Record<string,number>={oak_planks:64,stick:64};
+ recipes.sort((a,b)=>recipeDeficit(a,id=>names[id],n=>stock[n]??0)-recipeDeficit(b,id=>names[id],n=>stock[n]??0));
+ assert.equal(recipes[0].kind,"oak");
+ assert.equal(recipeDeficit(recipes[1],id=>names[id],n=>stock[n]??0),3);
+});
