@@ -32,3 +32,6 @@ secrets/
 *.token
 backups/
 logs/
+
+# Reproducibly generated native dependency archives/cache
+.native-deps/

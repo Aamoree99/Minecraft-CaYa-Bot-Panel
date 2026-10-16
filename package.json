@@ -24,12 +24,13 @@
     "test:all": "node scripts/combat-test.mjs && node scripts/full-suite.mjs && node scripts/smoke.mjs && node scripts/movement-test.mjs && node scripts/inventory-test.mjs && node scripts/grok-smoke-all.mjs",
     "electron:dev": "electron .",
     "dist:win": "npm run build && electron-builder --win nsis portable",
-    "test:unit": "tsx --test tests/*.test.ts"
+    "test:unit": "tsx --test tests/*.test.ts",
+    "prepare:native-deps": "python3 scripts/prepare-native-deps.py"
   },
   "dependencies": {
     "express": "^4.21.0",
-    "minecraft-data": "npm:@wp2508/minecraft-data@3.111.6",
-    "mineflayer": "npm:@wp2508/mineflayer@4.42.2",
+    "minecraft-data": "file:.native-deps/data.tgz",
+    "mineflayer": "file:.native-deps/mineflayer.tgz",
     "mineflayer-armor-manager": "^2.0.1",
     "mineflayer-pathfinder": "^2.4.5",
     "mineflayer-tool": "^1.2.0",

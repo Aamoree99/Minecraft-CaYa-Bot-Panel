@@ -1,0 +1,23 @@
+{
+  "mineflayer": {
+    "package": "@wp2508/mineflayer",
+    "version": "4.42.2",
+    "url": "https://registry.npmjs.org/@wp2508/mineflayer/-/mineflayer-4.42.2.tgz",
+    "integrity": "sha512-+vS3lA1mwF+buwELF4AuHIhmwzGec7rWgzfaP15h/85jLMnfLfMUCi0FFkmzRq12vnWH4lacLvSoHIJNAUhI0Q==",
+    "gitHead": "8a297bd003fab90adb324cd28b2a874eed04d87e"
+  },
+  "data": {
+    "package": "@wp2508/minecraft-data",
+    "version": "3.111.6",
+    "url": "https://registry.npmjs.org/@wp2508/minecraft-data/-/minecraft-data-3.111.6.tgz",
+    "integrity": "sha512-0lBIyhPLsCIuQ9UnJVp4s5De0IRPEQTwGuv69EiLuqmKOE06xXYDQpKsS0bZ25G/hNm4P1Xqmdy5ULriH9fT/w==",
+    "gitHead": "9c3d5857616620b3c8b30c23631374dc874670a3"
+  },
+  "official-data": {
+    "package": "minecraft-data",
+    "version": "3.111.0",
+    "url": "https://registry.npmjs.org/minecraft-data/-/minecraft-data-3.111.0.tgz",
+    "integrity": "sha512-0kKHqNZL/D1IbH7tJXBJ3z7YSn1/ylnWWR7X2zFwtEV+yr23nimItpGjP3o8UaLYrC+OV1gKLFQoew03XvJyoA==",
+    "gitHead": "085d0f4b1e0e034c7cfcae23ec5d3753b024f535"
+  }
+}
