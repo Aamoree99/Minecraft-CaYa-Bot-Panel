@@ -29,6 +29,7 @@ interface MemoryFile {
 }
 
 export interface McpBotStatus {
+  personality: string;
   botId: string;
   username: string;
   status: string;
@@ -102,6 +103,7 @@ export class AgentService extends EventEmitter {
         agentEnabled: bs?.agentEnabled ?? false,
         autopilot: bs?.autopilot ?? false,
         goal: bs?.goal ?? "",
+        personality: bs?.personality ?? "",
         busy: rt?.busy ?? false,
         lastRunAt: rt?.lastRunAt ?? 0
       };
@@ -145,7 +147,8 @@ export class AgentService extends EventEmitter {
     const next: McpBotSettings = {
       agentEnabled: patch.agentEnabled ?? cur.agentEnabled,
       goal: patch.goal !== undefined ? String(patch.goal).slice(0, 500) : cur.goal,
-      autopilot: patch.autopilot ?? cur.autopilot
+      autopilot: patch.autopilot ?? cur.autopilot,
+      personality: patch.personality !== undefined ? String(patch.personality).slice(0, 600) : (cur.personality ?? "")
     };
     this.settings.bots[botId] = next;
     void saveMcpSettings(this.settings);
