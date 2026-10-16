@@ -8,6 +8,8 @@ import { runGoto } from "../movement";
 import { gatherTarget, inWorkArea, GoalItemPickup, verifiedPickupDelta } from "./targets";
 import { ringSearch } from "./ringSearch";
 
+const miningDropBackoff = new WeakMap<Bot, WeakMap<object, number>>();
+
 interface DropEntityLike {
   id: number;
   name?: string;
@@ -155,7 +157,8 @@ export async function runSmartCollectDrops(
   radius: number,
   token: TaskToken,
   report: ProgressFn,
-  maxDurationMs = 45_000
+  maxDurationMs = 45_000,
+  retryAfter?: WeakMap<object, number>
 ): Promise<number> {
   const bot = requireBot(instance);
   const normalizedFilter = filter?.replace(/^minecraft:/, "").toLowerCase();
@@ -167,6 +170,7 @@ export async function runSmartCollectDrops(
   while (!token.cancelled && Date.now() - startedAt < maxDurationMs) {
     const drops = (Object.values(bot.entities) as DropEntityLike[]).filter((entity) => {
       if (!entity || !isItemEntity(entity)) return false;
+      if ((retryAfter?.get(entity) ?? 0) > Date.now()) return false;
       if (bot.entity.position.distanceTo(entity.position) > radius) return false;
       if (token.workArea && !inWorkArea(entity.position, token.workArea.origin, token.workArea.radius)) return false;
       const name = droppedItemName(entity, bot);
@@ -212,6 +216,7 @@ export async function runSmartCollectDrops(
       );
     } catch {
       failures.set(target.id, (failures.get(target.id) ?? 0) + 1);
+      retryAfter?.set(target, Date.now() + 30_000);
       await sleep(120);
       continue;
     }
@@ -229,8 +234,10 @@ export async function runSmartCollectDrops(
     if (picked) {
       verified += picked;
       failures.delete(target.id);
+      retryAfter?.delete(target);
     } else {
       failures.set(target.id, (failures.get(target.id) ?? 0) + 1);
+      retryAfter?.set(target, Date.now() + 30_000);
 
     }
   }
@@ -250,7 +257,10 @@ export async function collectDropsAfterDig(
 ): Promise<void> {
   await sleep(120);
   try {
-    await runSmartCollectDrops(instance, filter, 8, token, () => {}, 14_000);
+    const bot=requireBot(instance);
+    let retryAfter=miningDropBackoff.get(bot);
+    if(!retryAfter){retryAfter=new WeakMap();miningDropBackoff.set(bot,retryAfter);}
+    await runSmartCollectDrops(instance, filter, 8, token, () => {}, 14_000, retryAfter);
   } catch {
     // Kazma işlemini yalnızca pickup best-effort hatası yüzünden failed sayma.
   }
