@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# Local-only updater. No push, upstream merge or data/secret rewrites.
+set -euo pipefail
+umask 077
+MODE=update
+if [[ ${1:-} == --check ]]; then MODE=check; shift; fi
+REF=${1:?usage: caya-update [--check] <local-ref>}
+[[ $# == 1 && $REF != -* ]] || { echo 'One non-option local ref required' >&2; exit 2; }
+APP=${CAYA_UPDATE_APP:-/opt/bot-panel/app}
+STATE=${CAYA_UPDATE_STATE:-/var/lib/bot-panel}
+USER_NAME=${CAYA_UPDATE_USER:-caya}
+NODE_DIR=${CAYA_UPDATE_NODE:-/opt/node22/bin}
+UNIT=${CAYA_UPDATE_UNIT:-caya.service}
+export PATH="$NODE_DIR:$PATH"
+[[ $MODE == check || $(id -u) == 0 ]] || { echo 'Run as root' >&2; exit 2; }
+exec 9>"$STATE/caya-update.lock"
+flock -n 9 || { echo 'Another update is running' >&2; exit 2; }
+as_caya() { if [[ $(id -un) == "$USER_NAME" ]]; then env HOME="$STATE" PATH="$PATH" "$@"; else runuser -u "$USER_NAME" -- env HOME="$STATE" PATH="$PATH" "$@"; fi; }
+git_caya() { as_caya git -C "$APP" "$@"; }
+[[ -z $(git_caya status --porcelain) ]] || { echo 'Working tree is dirty; commit or preserve changes first' >&2; exit 2; }
+PREVIOUS=$(git_caya rev-parse HEAD)
+BRANCH=$(git_caya symbolic-ref --quiet --short HEAD) || { echo 'Use a local development branch, not detached HEAD' >&2; exit 2; }
+CANDIDATE=$(git_caya rev-parse --verify --end-of-options "$REF^{commit}")
+git_caya merge-base --is-ancestor "$PREVIOUS" "$CANDIDATE" || { echo 'Ref would discard local patch history; merge/rebase and review locally first' >&2; exit 2; }
+printf 'Local candidate %s on %s (previous %s)\n' "$CANDIDATE" "$BRANCH" "$PREVIOUS"
+[[ $MODE == check ]] && exit 0
+BACKUP_DIR="$STATE/backups/updates"
+install -d -m 700 -o root -g root "$BACKUP_DIR"
+STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+BACKUP="$BACKUP_DIR/caya-before-$STAMP.tar.gz"
+WAS_ACTIVE=false
+systemctl is-active --quiet "$UNIT" && WAS_ACTIVE=true
+stopped=false
+rollback() {
+  local result=$?
+  trap - EXIT INT TERM
+  if (( result == 0 )); then return; fi
+  echo "Update failed; restoring source $PREVIOUS. Persistent state was not overwritten. Backup: $BACKUP" >&2
+  if $stopped; then
+    systemctl stop "$UNIT" || true
+    if git_caya checkout --quiet "$PREVIOUS" && build; then
+      git_caya update-ref "refs/caya/update-failed/$STAMP" "$CANDIDATE"
+      git_caya update-ref "refs/heads/$BRANCH" "$PREVIOUS" "$CANDIDATE"
+      git_caya switch --quiet "$BRANCH"
+      if $WAS_ACTIVE; then systemctl start "$UNIT"; health || echo 'Rollback service health failed; inspect logs' >&2; fi
+    else
+      echo 'Rollback build failed; service remains stopped. Restore the source/build from the recorded revision.' >&2
+    fi
+  fi
+  exit "$result"
+}
+build() {
+  (cd "$APP" && as_caya npm ci --include=dev --no-audit --no-fund && as_caya npm run test:unit && as_caya npm run typecheck && as_caya npm run build)
+}
+health() {
+  local bind port
+  bind=$(systemctl show "$UNIT" -p Environment --value | python3 -c 'import shlex,sys;print(dict(x.split("=",1) for x in shlex.split(sys.stdin.read()) if "=" in x).get("CAYA_HOST","127.0.0.1"))')
+  port=$(systemctl show "$UNIT" -p Environment --value | python3 -c 'import shlex,sys;print(dict(x.split("=",1) for x in shlex.split(sys.stdin.read()) if "=" in x).get("CAYA_PORT","3001"))')
+  for _ in {1..30}; do
+    if systemctl is-active --quiet "$UNIT" && curl -fsS "http://$bind:$port/api/state" >/dev/null; then return 0; fi
+    sleep 1
+  done
+  return 1
+}
+trap rollback EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+systemctl stop "$UNIT"
+stopped=true
+# With CaYa stopped, capture consistent data plus protected credentials/config.
+MEMBERS=("${STATE#/}/data" "${STATE#/}/secrets" 'opt/caya/hooks' 'etc/systemd/system/caya.service')
+[[ -d /etc/systemd/system/caya.service.d ]] && MEMBERS+=('etc/systemd/system/caya.service.d')
+shopt -s nullglob
+for secret in /etc/example-server/caya-bot-*.pass; do MEMBERS+=("${secret#/}"); done
+shopt -u nullglob
+tar --exclude='*/data/logs' -czf "$BACKUP" -C / "${MEMBERS[@]}"
+tar -tzf "$BACKUP" >/dev/null
+sha256sum "$BACKUP" > "$BACKUP.sha256"
+printf 'previous=%s\ncandidate=%s\nbranch=%s\n' "$PREVIOUS" "$CANDIDATE" "$BRANCH" > "$BACKUP.revision"
+# Branch remains our maintained local branch; never automatically merge upstream.
+git_caya merge --ff-only "$CANDIDATE"
+build
+if $WAS_ACTIVE; then systemctl start "$UNIT"; health; fi
+trap - EXIT INT TERM
+printf 'Updated locally to %s; backup %s\n' "$CANDIDATE" "$BACKUP"
