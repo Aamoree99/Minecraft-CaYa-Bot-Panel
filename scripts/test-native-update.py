@@ -25,13 +25,16 @@ def health():
  with urllib.request.urlopen("http://127.0.0.1:3003/api/state",timeout=5) as r:
   data=json.load(r);assert data["bots"]==[];assert "26.3" in data["supportedVersions"]
 def digest():
- files=[state/"data/preservation.json",state/"secrets/Synthetic.pass",hooks/"synthetic.cjs",protected/"caya-bot-Synthetic.pass",unitfile]
+ files=[state/"data/bots.json",state/"data/servers.json",state/"data/mcp.json",state/"data/preservation.json",state/"secrets/Synthetic.pass",hooks/"synthetic.cjs",protected/"caya-bot-Synthetic.pass",unitfile]
  return {str(p):(hashlib.sha256(p.read_bytes()).hexdigest(),p.stat().st_mode & 0o777,p.stat().st_uid) for p in files}
 def update(ref):
  return run(["bash",source/"scripts/caya-update",ref],check=False,env=env).returncode
 try:
  run(["runuser","-u","caya","--","git","clone","--no-hardlinks",source,app])
  for d in [state/"data",state/"secrets",hooks,protected]:d.mkdir(parents=True,exist_ok=True)
+ (state/"data/bots.json").write_text("[]\n")
+ (state/"data/servers.json").write_text('[ {"id":"synthetic","name":"isolated","host":"127.0.0.1","port":1,"version":"26.3"} ]\n')
+ (state/"data/mcp.json").write_text('{"enabled":false,"ollama":{"enabled":false},"mcpServer":{"enabled":false,"requireToken":true,"token":"synthetic-not-real"}}\n')
  (state/"data/preservation.json").write_text('{"synthetic":true,"value":"preserve"}\n')
  for p in [state/"secrets/Synthetic.pass",protected/"caya-bot-Synthetic.pass"]:p.write_text("synthetic-not-a-real-secret\n");p.chmod(0o600)
  (hooks/"synthetic.cjs").write_text("// isolated hook fixture\n")
@@ -43,6 +46,7 @@ try:
  run(["systemctl","daemon-reload"])
  env={**os.environ,"CAYA_UPDATE_APP":str(app),"CAYA_UPDATE_STATE":str(state),"CAYA_UPDATE_UNIT":unit,"CAYA_UPDATE_UNIT_FILE":str(unitfile),"CAYA_UPDATE_HOOKS":str(hooks),"CAYA_UPDATE_SECRET_DIR":str(protected)}
  assert update("HEAD")==0,"initial install"
+ assert not git("status","--porcelain"),"bootstrap changed pinned manifests"
  run(["systemctl","start",unit]);time.sleep(3);health()
  before=digest()
  git("switch","-c","integration/success")
