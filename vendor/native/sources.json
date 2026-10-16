@@ -15,9 +15,9 @@
   },
   "official-data": {
     "package": "minecraft-data",
-    "version": "3.111.0",
-    "url": "https://registry.npmjs.org/minecraft-data/-/minecraft-data-3.111.0.tgz",
-    "integrity": "sha512-0kKHqNZL/D1IbH7tJXBJ3z7YSn1/ylnWWR7X2zFwtEV+yr23nimItpGjP3o8UaLYrC+OV1gKLFQoew03XvJyoA==",
-    "gitHead": "085d0f4b1e0e034c7cfcae23ec5d3753b024f535"
+    "version": "3.117.0",
+    "url": "https://registry.npmjs.org/minecraft-data/-/minecraft-data-3.117.0.tgz",
+    "integrity": "sha512-glKv0EEmVwKvJwdNAKAal2P7gi/nijU9rEMp8gJmqYYRVswS6hA0q9566lcGHH07Ocmpqw5bMRbARC25pR13gA==",
+    "gitHead": "94b717a14e167afdbcdfe708f40f7eed8917fe08"
   }
 }

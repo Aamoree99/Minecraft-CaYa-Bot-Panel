@@ -29,7 +29,7 @@
   },
   "dependencies": {
     "express": "^4.21.0",
-    "minecraft-data": "file:.native-deps/data-71f7037342dd0f27cdb4.tgz",
+    "minecraft-data": "file:.native-deps/data-98ec232a2293bf3e0c33.tgz",
     "mineflayer": "file:.native-deps/mineflayer-f4a93a2c999fb45b7d3d.tgz",
     "mineflayer-armor-manager": "^2.0.1",
     "mineflayer-pathfinder": "^2.4.5",
