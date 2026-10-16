@@ -4,6 +4,7 @@ import { Vec3 } from "vec3";
 import type { BotInstance } from "../../core/BotInstance";
 import type { ProgressFn, TaskToken } from "../../core/TaskQueue";
 import { boundedOp } from "../build/place";
+import { transferredCount } from "./transfer";
 import { runGoto } from "../movement";
 
 /**
@@ -46,6 +47,7 @@ export interface DepositResult {
 interface ContainerWindow {
   deposit?: (itemType: number, metadata: number | null, count: number) => Promise<void>;
   withdraw?: (itemType: number, metadata: number | null, count: number) => Promise<void>;
+  items: () => Array<{ name: string; count: number }>;
   containerItems?: () => Array<{ name: string; count: number }>;
   close: () => void;
 }
@@ -57,7 +59,18 @@ function requireBot(instance: BotInstance): Bot {
 }
 
 function countByName(bot: Bot, name: string): number {
-  return bot.inventory.items().reduce((s, i) => s + (i.name === name ? i.count : 0), 0);
+  const items = bot.currentWindow ? bot.currentWindow.items() : bot.inventory.items();
+  return items.reduce((s, i) => s + (i.name === name ? i.count : 0), 0);
+}
+
+function containerCount(win: ContainerWindow, name: string): number {
+  return win.containerItems?.().reduce((s, i) => s + (i.name === name ? i.count : 0), 0) ?? 0;
+}
+
+async function confirmWindow(bot: Bot, win: ContainerWindow, token: TaskToken) {
+  const sync = (bot as unknown as { _syncWindow?: (w: unknown) => Promise<void> })._syncWindow;
+  if (!sync) throw new Error("Server window confirmation unavailable");
+  await boundedOp(sync.call(bot, win), token, 3000, "confirm container state");
 }
 
 /** Hedef sandığı çöz: koordinat verildiyse orada konteyner ara, yoksa en yakın. */
@@ -157,6 +170,7 @@ export async function depositToChest(
       if (token.cancelled) break;
       const def = bot.registry.itemsByName[name];
       if (!def) continue;
+      await confirmWindow(bot, win, token);
       const before = countByName(bot, name);
       const target = Math.min(wanted, before);
       // sandık kısmen dolabilir — stack stack dene ki sığan kadarı kesin girsin
@@ -164,6 +178,7 @@ export async function depositToChest(
       while (movedThis < target) {
         if (token.cancelled) break;
         const chunk = Math.min(64, target - movedThis);
+        const snapshot: [number, number] = [countByName(bot, name), containerCount(win, name)];
         let opFailed = false;
         try {
           if (!win.deposit) throw new Error("Chest deposit API unavailable");
@@ -173,8 +188,12 @@ export async function depositToChest(
           opFailed = true;
         }
         // hata olsa bile kısmi transfer gerçekleşmiş olabilir — envanterden say
-        const now = countByName(bot, name);
-        const delta = before - movedThis - now;
+        // Mineflayer keeps bot.inventory stale until the container closes.
+        // Request an authoritative window refresh before deciding or repeating.
+        try { await confirmWindow(bot, win, token); } catch (e) {
+          throw new Error(`Deposit confirmation failed; do not retry automatically: ${String(e)}`);
+        }
+        const delta = transferredCount(snapshot, [countByName(bot, name), containerCount(win, name)], chunk);
         if (delta > 0) movedThis += delta;
         if (opFailed) break;
         if (delta <= 0) {
@@ -241,12 +260,14 @@ export async function withdrawFromChest(
   const win = await openContainerSafe(bot, chest, token);
   let lastError = "";
   try {
+    await confirmWindow(bot, win, token);
     const inChest = win.containerItems?.().filter((i) => i.name === item).reduce((s, i) => s + i.count, 0) ?? 0;
     const target = Math.min(Math.max(1, Math.floor(spec.count)), inChest || spec.count);
     let got = 0;
     while (got < target) {
       if (token.cancelled) break;
       const chunk = Math.min(64, target - got);
+      const snapshot: [number, number] = [containerCount(win, item), countByName(bot, item)];
       let opFailed = false;
       try {
         if (!win.withdraw) throw new Error("Chest withdraw API unavailable");
@@ -256,8 +277,8 @@ export async function withdrawFromChest(
         opFailed = true;
       }
       // hata sonrası bile kısmi çekim olabilir — envanterden doğrula
-      const now = countByName(bot, item);
-      const delta = now - before - got;
+      await confirmWindow(bot, win, token);
+      const delta = transferredCount(snapshot, [containerCount(win, item), countByName(bot, item)], chunk);
       if (delta > 0) {
         got += delta;
         report({ done: got, total: target, label: `withdraw ${item} ${got}/${target}` });
