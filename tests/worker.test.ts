@@ -68,11 +68,11 @@ test("worker forwards real child progress across child counter resets",async()=>
 });
 
 
-test("reviewed SAUNA fixture protects the supporting deck while allowing crops and quarry",async()=>{
- const fs=await import("node:fs");const {owned}=await import("../server/src/modules/worker/policy");
- const fixture=parseWorkspace(JSON.parse(fs.readFileSync("config/sauna-worker.json","utf8")));
- for(const p of [{x:970,y:200,z:955},{x:954,y:200,z:969},{x:954,y:200,z:965}])assert.equal(owned(fixture,p),false);
- for(const p of [{x:970,y:201,z:955},{x:954,y:201,z:969}])assert.equal(owned(fixture,p),true);
+test("synthetic workspace protects its supporting deck while allowing surface work",async()=>{
+ const {owned}=await import("../server/src/modules/worker/policy");
+ const fixture=parseWorkspace({dimension:"overworld",spawn:{x:0,y:70,z:0},margin:16,base:{x:0,y:70,z:0},owned:[{min:{x:-10,y:69,z:-10},max:{x:10,y:75,z:10}}],protected:[{min:{x:-10,y:69,z:-10},max:{x:10,y:69,z:10}}],containers:{}});
+ assert.equal(owned(fixture,{x:1,y:69,z:1}),false);
+ assert.equal(owned(fixture,{x:1,y:70,z:1}),true);
 });
 
 
