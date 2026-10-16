@@ -48,3 +48,15 @@ test("configuration transition discards a pending native teleport acknowledgemen
  await new Promise(resolve=>setTimeout(resolve,80));
  assert.deepEqual(writes,[]);
 });
+
+
+test("native relative player rotation resolves each axis before converting units",()=>{
+ const {EventEmitter}=require("node:events"),{Vec3}=require("vec3"),conv=require("mineflayer/lib/conversions");
+ const bot=new EventEmitter();bot.registry=require("prismarine-registry")("26.3");bot.protocolVersion=777;bot.supportFeature=bot.registry.supportFeature;bot._client=new EventEmitter();bot.entity={position:new Vec3(0,118,0),velocity:new Vec3(0,0,0),yaw:conv.fromNotchianYaw(90),pitch:conv.fromNotchianPitch(10)};
+ require("mineflayer/lib/plugins/physics")(bot,{});
+ bot._client.emit("player_rotation",{yaw:20,pitch:-5,relativeYaw:true,relativePitch:true});
+ assert.ok(Math.abs(conv.toNotchianYaw(bot.entity.yaw)-110)<1e-10);assert.ok(Math.abs(conv.toNotchianPitch(bot.entity.pitch)-5)<1e-10);
+ bot._client.emit("player_rotation",{yaw:45,pitch:10,relativeYaw:false,relativePitch:true});
+ assert.ok(Math.abs(conv.toNotchianYaw(bot.entity.yaw)-45)<1e-10);assert.ok(Math.abs(conv.toNotchianPitch(bot.entity.pitch)-15)<1e-10);
+ bot.emit("end");
+});

@@ -1,0 +1,17 @@
+diff --git a/lib/plugins/physics.js b/lib/plugins/physics.js
+index c7b2f7c..239cb1a 100755
+--- a/lib/plugins/physics.js
++++ b/lib/plugins/physics.js
+@@ -507,8 +507,10 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+ 
+   // 1.21.3+
+   bot._client.on('player_rotation', (packet) => {
+-    bot.entity.yaw = conv.fromNotchianYaw(packet.yaw)
+-    bot.entity.pitch = conv.fromNotchianPitch(packet.pitch)
++    const yaw = packet.yaw + (bot.protocolVersion >= 777 && packet.relativeYaw ? conv.toNotchianYaw(bot.entity.yaw) : 0)
++    const pitch = packet.pitch + (bot.protocolVersion >= 777 && packet.relativePitch ? conv.toNotchianPitch(bot.entity.pitch) : 0)
++    bot.entity.yaw = conv.fromNotchianYaw(yaw)
++    bot.entity.pitch = conv.fromNotchianPitch(pitch)
+   })
+ 
+   // player position and look (clientbound)
