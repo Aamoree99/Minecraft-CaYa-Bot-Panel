@@ -8,6 +8,7 @@ assert os.geteuid()==0, "Run as root in the installed CT"
 source=P(__file__).resolve().parent.parent
 root=P(tempfile.mkdtemp(prefix="caya-native-update-",dir="/var/tmp"))
 root.chmod(0o755)
+shutil.chown(root,user="caya",group="caya")
 app=root/"app"; state=root/"state"; hooks=root/"hooks"; protected=root/"protected"
 unit="caya-native-update-test-"+root.name.rsplit("-",1)[-1]+".service"
 unitfile=P("/run/systemd/system")/unit
@@ -29,7 +30,7 @@ def digest():
 def update(ref):
  return run(["bash",source/"scripts/caya-update",ref],check=False,env=env).returncode
 try:
- run(["git","-c","safe.directory="+str(source),"clone","--no-hardlinks",source,app])
+ run(["runuser","-u","caya","--","git","clone","--no-hardlinks",source,app])
  for d in [state/"data",state/"secrets",hooks,protected]:d.mkdir(parents=True,exist_ok=True)
  (state/"data/preservation.json").write_text('{"synthetic":true,"value":"preserve"}\n')
  for p in [state/"secrets/Synthetic.pass",protected/"caya-bot-Synthetic.pass"]:p.write_text("synthetic-not-a-real-secret\n");p.chmod(0o600)
