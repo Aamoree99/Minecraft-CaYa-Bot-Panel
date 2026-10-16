@@ -1,3 +1,4 @@
+import { equipUsableArmor } from "../modules/worker/equipment";
 import { WorkerService } from "../modules/worker";
 import { attachWorkspace, assertPosition } from "../modules/worker/policy";
 import { enableAuthMe } from "./authme";
@@ -1513,7 +1514,7 @@ export class BotInstance extends EventEmitter {
       bot.loadPlugin(armorManager);
       setTimeout(() => {
         try {
-          (bot as unknown as { armorManager?: { equipAll(): void } }).armorManager?.equipAll();
+          void equipUsableArmor(bot).catch(err=>this.log.warn("Armor equip failed",String(err)));
         } catch {
           /* zırh yoksa sorun değil */
         }

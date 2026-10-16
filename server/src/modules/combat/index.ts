@@ -1,3 +1,4 @@
+import { equipUsableArmor } from "../worker/equipment";
 import { insideWorld, usable, workspace } from "../worker/policy";
 import type { Bot } from "mineflayer";
 import type { Entity } from "prismarine-entity";
@@ -2196,6 +2197,7 @@ private async fleeFrom(from: { x: number; y: number; z: number }, dist: number, 
     const bot = this.bot ?? this.instance.bot;
     if (!bot) return;
     this.bot = bot;
+    if(this.instance.config.inventory.autoBestGear)await equipUsableArmor(bot);
     const banned = this.instance.config.inventory.bannedItems;
     const items = bot.inventory.items().filter(i=>usable(i,bot.registry,workspace?.minDurability??8)).sort((a,b)=>(a.durabilityUsed??0)-(b.durabilityUsed??0));
     const names = items.map((i) => i.name);
