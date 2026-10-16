@@ -4,7 +4,8 @@ import { Vec3 } from "vec3";
 import type { BotInstance } from "../../core/BotInstance";
 import type { ProgressFn, TaskToken } from "../../core/TaskQueue";
 import { boundedOp } from "../build/place";
-import { transferredCount } from "./transfer";
+import { confirmedWindowClick } from "./confirmedClicks";
+import { transferredCount, transferWithConfirmation } from "./transfer";
 import { runGoto } from "../movement";
 
 /**
@@ -182,7 +183,7 @@ export async function depositToChest(
         let opFailed = false;
         try {
           if (!win.deposit) throw new Error("Chest deposit API unavailable");
-          await boundedOp(win.deposit(def.id, null, chunk), token, 6_000, `deposit ${name}`);
+          await transferWithConfirmation(win as never, def.id, chunk, false, (slot, button) => confirmedWindowClick(bot, slot, button, token), async () => {} );
         } catch (e) {
           lastError = e instanceof Error ? e.message : String(e);
           opFailed = true;
@@ -259,6 +260,7 @@ export async function withdrawFromChest(
   const before = countByName(bot, item);
   const win = await openContainerSafe(bot, chest, token);
   let lastError = "";
+  let confirmedGot = 0;
   try {
     await confirmWindow(bot, win, token);
     const inChest = win.containerItems?.().filter((i) => i.name === item).reduce((s, i) => s + i.count, 0) ?? 0;
@@ -271,7 +273,7 @@ export async function withdrawFromChest(
       let opFailed = false;
       try {
         if (!win.withdraw) throw new Error("Chest withdraw API unavailable");
-        await boundedOp(win.withdraw(def.id, null, chunk), token, 6_000, `withdraw ${item}`);
+        await transferWithConfirmation(win as never, def.id, chunk, true, (slot, button) => confirmedWindowClick(bot, slot, button, token), async () => {} );
       } catch (e) {
         lastError = e instanceof Error ? e.message : String(e);
         opFailed = true;
@@ -281,6 +283,7 @@ export async function withdrawFromChest(
       const delta = transferredCount(snapshot, [containerCount(win, item), countByName(bot, item)], chunk);
       if (delta > 0) {
         got += delta;
+        confirmedGot = got;
         report({ done: got, total: target, label: `withdraw ${item} ${got}/${target}` });
       }
       if (opFailed) break;
@@ -299,7 +302,7 @@ export async function withdrawFromChest(
   }
   if (token.cancelled) throw new Error(token.reason ?? "cancelled");
 
-  const got = countByName(bot, item) - before;
+  const got = confirmedGot;
   if (got <= 0) {
     throw new Error(`Withdraw failed: ${item} — ${lastError || "not found in chest"}`);
   }
