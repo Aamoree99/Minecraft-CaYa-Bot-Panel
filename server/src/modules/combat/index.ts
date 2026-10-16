@@ -1,3 +1,4 @@
+import { isDeadEntity, trackEntityDeaths } from "./liveness";
 import { retreatCandidates, retreatSeparation } from "./retreat";
 import { equipUsableArmor } from "../worker/equipment";
 import { usable, workspace } from "../worker/policy";
@@ -221,6 +222,7 @@ getRuntime(): CombatRuntime {
   }
 
   attach(bot: Bot) {
+    trackEntityDeaths(bot);
     this.detachKeepCompanion();
     this.bot = bot;
     this.lastHealth = bot.health ?? 20;
@@ -1024,7 +1026,7 @@ getRuntime(): CombatRuntime {
 
     for (const id in bot.entities) {
       const e = bot.entities[id];
-      if (!e || e === bot.entity) continue;
+      if (!e || e === bot.entity || isDeadEntity(e)) continue;
       if (this.isTargetTemporarilyUnreachable(e)) continue;
       const d = bot.entity.position.distanceTo(e.position);
       if (d > range) continue;
@@ -1099,7 +1101,7 @@ getRuntime(): CombatRuntime {
     for (const { name: wardName, ent: wardEnt } of wardEntities) {
       for (const id in bot.entities) {
         const e = bot.entities[id];
-        if (!e || e === bot.entity) continue;
+        if (!e || e === bot.entity || isDeadEntity(e)) continue;
       if (this.isTargetTemporarilyUnreachable(e)) continue;
         if (wardEntities.some((w) => w.ent === e)) continue;
         const d = wardEnt.position.distanceTo(e.position);
@@ -1322,7 +1324,7 @@ getRuntime(): CombatRuntime {
           throw new Error(res.detail ?? token.reason ?? "cancelled");
         }
 
-        if (entity.health !== undefined && entity.health <= 0) break;
+        if (isDeadEntity(entity)) break;
 
         await sleep(50);
       }
@@ -1633,7 +1635,7 @@ getRuntime(): CombatRuntime {
             });
           }
           // main target öldüyse bitir (cleave targeti değil)
-          if (entity.health !== undefined && entity.health <= 0) break;
+          if (isDeadEntity(entity)) break;
         } else if (res.reason === "range" || res.reason === "los") {
           await this.approachEntity(entity, Math.max(1.15, reach - 0.7), token);
         } else if (res.reason === "cancelled") {
@@ -1732,7 +1734,7 @@ getRuntime(): CombatRuntime {
 
     for (const id in bot.entities) {
       const e = bot.entities[id];
-      if (!e || e === bot.entity) continue;
+      if (!e || e === bot.entity || isDeadEntity(e)) continue;
       if (primaryId != null && e.id === primaryId) continue;
       if (primary && e === primary) continue;
       if (this.isTargetTemporarilyUnreachable(e)) continue;
@@ -1816,7 +1818,7 @@ getRuntime(): CombatRuntime {
     const candidates: Entity[] = [];
     for (const id in bot.entities) {
       const e = bot.entities[id];
-      if (!e || e === bot.entity) continue;
+      if (!e || e === bot.entity || isDeadEntity(e)) continue;
       if (this.isTargetTemporarilyUnreachable(e)) continue;
       const dist = bot.entity.position.distanceTo(e.position);
       if (dist > range) continue;
@@ -1845,7 +1847,7 @@ getRuntime(): CombatRuntime {
     let bestD = radius;
     for (const id in bot.entities) {
       const e = bot.entities[id];
-      if (!e || e === bot.entity) continue;
+      if (!e || e === bot.entity || isDeadEntity(e)) continue;
       if (this.isTargetTemporarilyUnreachable(e)) continue;
       if (!isHostileMob(String(e.name ?? e.displayName ?? ""))) continue;
       if (!hasLineOfSight(bot, e)) continue;
@@ -1913,7 +1915,7 @@ getRuntime(): CombatRuntime {
     let bestD = maxDist + 0.001;
     for (const id in bot.entities) {
       const e = bot.entities[id];
-      if (!e || e === bot.entity) continue;
+      if (!e || e === bot.entity || isDeadEntity(e)) continue;
       if (this.isTargetTemporarilyUnreachable(e)) continue;
       if (labelEntity(e).toLowerCase() !== want) continue;
       if (e.isValid === false) continue;

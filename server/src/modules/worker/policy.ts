@@ -1,3 +1,4 @@
+import { isDeadEntity, trackEntityDeaths } from "../combat/liveness";
 import fs from "node:fs";
 import type { Bot } from "mineflayer";
 import type { BotInstance } from "../../core/BotInstance";
@@ -54,13 +55,14 @@ export function guardMovements(m: any): void { if (!workspace)
 export function attachWorkspace(instance: BotInstance, bot: Bot): void {
     if (!workspace)
         return;
+    trackEntityDeaths(bot);
     const w = workspace;
     let lastBlocked = 0;
     const tick = () => {
         if (!bot.entity || instance.status !== "online")
             return;
         const p = bot.entity.position, v = bot.entity.velocity;
-        if(Object.values(bot.entities).some(e=>e.name==="creeper"&&e.position.distanceTo(p)<4)){
+        if(Object.values(bot.entities).some(e=>e.name==="creeper"&&!isDeadEntity(e)&&e.position.distanceTo(p)<4)){
             const reason="CREEPER_PROXIMITY: no safe separation; emergency disconnect";
             instance.worker?.interrupt(reason);instance.tasks.cancelAll(reason);instance.stop();instance.runtime.lastError=reason;return;
         }

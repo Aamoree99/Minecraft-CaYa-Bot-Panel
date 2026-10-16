@@ -19,7 +19,7 @@ test("cancelled queued worker persists interruption and permits explicit resubmi
   assert.equal(tasks.listenerCount('queueCleared'),0);worker.enqueue({mode:'return'});tasks.cancelAll('Bot died; task cancelled');assert.equal(worker.snapshot().state,'INTERRUPTED');assert.match(worker.snapshot().reason,/Bot died/);
   const {EventEmitter}=require('node:events'),{Vec3}=require('vec3'),{attachWorkspace}=require('./server/src/modules/worker/policy.ts');
   const bot=new EventEmitter();bot.entity={position:new Vec3(960,201,960),velocity:new Vec3(0,0,0)};bot.entities={1:{name:'creeper',position:new Vec3(963.5,201,960)}};
-  let stopped=false,cancelReason='';const guarded={status:'online',runtime:{dimension:'overworld'},tasks:{cancelAll:r=>cancelReason=r},stop:()=>stopped=true};attachWorkspace(guarded,bot);bot.emit('physicsTick');assert.equal(stopped,true);assert.match(cancelReason,/CREEPER_PROXIMITY/);bot.heldItem={name:'water_bucket'};assert.throws(()=>bot.activateItem(),/liquid use/);
+  let stopped=false,cancelReason='';const guarded={status:'online',runtime:{dimension:'overworld'},tasks:{cancelAll:r=>cancelReason=r},stop:()=>stopped=true};attachWorkspace(guarded,bot);bot.emit('physicsTick');assert.equal(stopped,true);assert.match(cancelReason,/CREEPER_PROXIMITY/);stopped=false;bot.emit('entityDead',bot.entities[1]);bot.emit('physicsTick');assert.equal(stopped,false);bot.heldItem={name:'water_bucket'};assert.throws(()=>bot.activateItem(),/liquid use/);
  `],{cwd:process.cwd(),env:{...process.env,CAYA_DATA_DIR:dir,CAYA_WORKSPACE_FILE:config},encoding:"utf8",timeout:10000});assert.equal(result.status,0,result.stderr+result.stdout);
  }finally{fs.rmSync(dir,{recursive:true,force:true});}
 });
