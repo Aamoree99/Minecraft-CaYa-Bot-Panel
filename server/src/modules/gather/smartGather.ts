@@ -158,7 +158,8 @@ export async function runSmartCollectDrops(
   token: TaskToken,
   report: ProgressFn,
   maxDurationMs = 45_000,
-  retryAfter?: WeakMap<object, number>
+  retryAfter?: WeakMap<object, number>,
+  stopWhen: () => boolean = () => false
 ): Promise<number> {
   const bot = requireBot(instance);
   const normalizedFilter = filter?.replace(/^minecraft:/, "").toLowerCase();
@@ -167,7 +168,7 @@ export async function runSmartCollectDrops(
   let verified = 0;
   let quietPasses = 0;
 
-  while (!token.cancelled && Date.now() - startedAt < maxDurationMs) {
+  while (!token.cancelled && !stopWhen() && Date.now() - startedAt < maxDurationMs) {
     const drops = (Object.values(bot.entities) as DropEntityLike[]).filter((entity) => {
       if (!entity || !isItemEntity(entity)) return false;
       if ((retryAfter?.get(entity) ?? 0) > Date.now()) return false;
@@ -253,14 +254,15 @@ export async function runSmartCollectDrops(
 export async function collectDropsAfterDig(
   instance: BotInstance,
   filter: string | undefined,
-  token: TaskToken
+  token: TaskToken,
+  stopWhen: () => boolean = () => false
 ): Promise<void> {
   await sleep(120);
   try {
     const bot=requireBot(instance);
     let retryAfter=miningDropBackoff.get(bot);
     if(!retryAfter){retryAfter=new WeakMap();miningDropBackoff.set(bot,retryAfter);}
-    await runSmartCollectDrops(instance, filter, 8, token, () => {}, 14_000, retryAfter);
+    await runSmartCollectDrops(instance, filter, 8, token, () => {}, 14_000, retryAfter, stopWhen);
   } catch {
     // Kazma işlemini yalnızca pickup best-effort hatası yüzünden failed sayma.
   }
@@ -421,7 +423,9 @@ async function runDirectWorldGather(
   let noProgress = 0;
   const skipped = new Set<string>();
 
-  while (got < target && !token.cancelled) {
+  while (!token.cancelled) {
+    got = countHave();
+    if (got >= target) break;
     const area = token.workArea ?? { origin: bot.entity.position.clone(), radius: 16 };
     const block = bot.findBlock({
       matching: (b) => matcher(b.name) && (!b.position || (
@@ -451,6 +455,8 @@ async function runDirectWorldGather(
     }
     if (token.cancelled) throw new Error(token.reason ?? "cancelled");
 
+    got = countHave();
+    if (got >= target) break;
     const live = bot.blockAt(block.position);
     if (!live || !matcher(live.name) || !bot.canDigBlock(live)) {
       skipped.add(key);
@@ -461,6 +467,9 @@ async function runDirectWorldGather(
 
     try {
       await equipUsableTool(bot,live);
+      if (token.cancelled) throw new Error(token.reason ?? "cancelled");
+      got = countHave();
+      if (got >= target) break;
       if (!live.canHarvest(bot.heldItem?.type ?? null)) throw new Error(`Tool cannot harvest ${live.name}`);
       const wait = typeof bot.digTime === "function" ? bot.digTime(live) : 1_000;
       const ms = Math.max(3_000, Math.min(12_000, (Number.isFinite(wait) ? wait : 1_000) + 3_500));
@@ -474,7 +483,7 @@ async function runDirectWorldGather(
       const remainingBlock = bot.blockAt(live.position);
       if (remainingBlock?.type === live.type) throw new Error("Server did not confirm block removal");
       mined++;
-      await collectDropsAfterDig(instance, requested, token);
+      await collectDropsAfterDig(instance, requested, token, () => countHave() >= target);
     } catch (error) {
       skipped.add(key);
       noProgress++;
