@@ -19,6 +19,6 @@ export function retreatCandidates(bot:Pick<Bot,"blockAt">,pos:Vec3,from:Point,di
     const hazards=new Set(["fire","soul_fire","lava","water","powder_snow","cactus","sweet_berry_bush","campfire","soul_campfire"]);
     const clear=(p:Vec3)=>{const d=origin.distanceTo(p),steps=Math.ceil(d*2);for(let n=1;n<=steps;n++){const q=origin.offset((p.x-origin.x)*n/steps,(p.y-origin.y)*n/steps,(p.z-origin.z)*n/steps);if(hazards.has(bot.blockAt(q)?.name??"")||hazards.has(bot.blockAt(q.offset(0,1,0))?.name??"")||bot.blockAt(q)?.boundingBox!=="empty"||bot.blockAt(q.offset(0,1,0))?.boundingBox!=="empty"||bot.blockAt(q.offset(0,-1,0))?.boundingBox!=="block")return false;}return true;};
     const corridors=safe.filter(clear);
-    const routes=(corridors.length?corridors:safe).sort((a,b)=>Math.hypot(b.x-from.x,b.z-from.z)-Math.hypot(a.x-from.x,a.z-from.z));
+    const routes=corridors.sort((a,b)=>Math.hypot(b.x-from.x,b.z-from.z)-Math.hypot(a.x-from.x,a.z-from.z));
  return routes;
 }

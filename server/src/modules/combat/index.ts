@@ -2177,7 +2177,7 @@ private async fleeFrom(from: { x: number; y: number; z: number }, dist: number, 
     for(const target of routes.slice(0,3)){
       if(token.cancelled)throw Error(token.reason??"cancelled");
       try{
-        await runGoto(this.instance,target.x,target.y,target.z,1,token,()=>{},{canDig:false,allowPlace:false,timeoutMs:2000});
+        await runGoto(this.instance,target.x,target.y,target.z,1,token,()=>{},{canDig:false,allowPlace:false,timeoutMs:Math.min(8000,Math.max(2000,bot.entity.position.distanceTo(target)/3.5*1000+1000))});
         if(Math.hypot(bot.entity.position.x-from.x,bot.entity.position.z-from.z)>=required && bot.entity.position.distanceTo(pos)>=3)return;
         last="No verified separation from threat";
       }catch(error){last=error instanceof Error?error.message:String(error);}
