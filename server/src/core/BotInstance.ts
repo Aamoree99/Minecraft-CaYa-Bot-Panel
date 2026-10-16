@@ -814,7 +814,7 @@ export class BotInstance extends EventEmitter {
         label: `deposit: ${what}${where}`,
         priority: PRIORITY.USER,
         params: { ...opts },
-        requeueOnPreempt: true
+        requeueOnPreempt: false
       },
       () => async (token, report) => {
         const res = await depositToChest(this, opts, token, report);
@@ -831,7 +831,7 @@ export class BotInstance extends EventEmitter {
   private enqueueWithdraw(item: string, count: number, at?: { x?: number; y?: number; z?: number }) {
     const where = at && at.x != null && at.y != null && at.z != null ? ` @${Math.floor(at.x)},${Math.floor(at.y)},${Math.floor(at.z)}` : "";
     return this.tasks.enqueue(
-      { type: "withdraw", label: `depodan al: ${item}×${count}${where}`, priority: PRIORITY.USER, params: { item, count, ...at }, requeueOnPreempt: true },
+      { type: "withdraw", label: `depodan al: ${item}×${count}${where}`, priority: PRIORITY.USER, params: { item, count, ...at }, requeueOnPreempt: false },
       () => async (token, report) => {
         await withdrawFromChest(this, { item, count, ...at }, token, report);
       }

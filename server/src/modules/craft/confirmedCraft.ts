@@ -1,5 +1,6 @@
 import type { Bot } from "mineflayer";
 import type { TaskToken } from "../../core/TaskQueue";
+import { boundedOp } from "../build/place";
 import { confirmedWindowClick } from "../inventory/confirmedClicks";
 
 /** Keep Mineflayer recipe execution, but confirm its public click/put-away primitives
@@ -36,5 +37,17 @@ export async function craftConfirmed(bot: Bot, recipe: Parameters<Bot["craft"]>[
     await placeCursor(win.inventoryStart,win.inventoryEnd,win);
   }) as Bot["putAway"];
   try { await bot.craft(recipe,1,table); }
+  catch (error) {
+    // Closing the GUI returns cursor/grid materials; it performs no new craft.
+    // Cancellation must not leave ghost output or a hidden stack on the cursor.
+    if (bot._client.state === "play") {
+      try {
+        await bot.closeWindow(bot.currentWindow ?? bot.inventory);
+        const sync=(bot as unknown as {_syncWindow?: (w:unknown)=>Promise<void>})._syncWindow;
+        if(sync) await boundedOp(sync.call(bot,bot.inventory),{cancelled:false},1500,"refresh inventory after craft error");
+      } catch { /* retain the original failure; disconnect also returns cursor */ }
+    }
+    throw error;
+  }
   finally { bot.clickWindow=originalClick;bot.putAway=originalPutAway;bot.putSelectedItemRange=originalPutSelected; }
 }

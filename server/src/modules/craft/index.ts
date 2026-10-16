@@ -37,7 +37,7 @@ export class CraftService {
         label: `craft: ${name} ×${n}`,
         priority: PRIORITY.USER,
         params: { item: name, count: n },
-        requeueOnPreempt: true
+        requeueOnPreempt: false
       },
       () => (token, report) => this.runCraft(name, n, token, report)
     );

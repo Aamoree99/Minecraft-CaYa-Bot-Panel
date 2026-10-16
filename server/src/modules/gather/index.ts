@@ -60,7 +60,7 @@ export class GatherService {
         label: `odun topla ${modeText}${logType ? ` (${logType})` : ""}`,
         priority,
         params: { count: n, logType: logType ?? null, countMode },
-        requeueOnPreempt: true
+        requeueOnPreempt: false
       },
       () => (token, report) => this.runCollectWood(n, logType, token, report, countMode)
     );
@@ -73,7 +73,7 @@ export class GatherService {
         label: `ground items${filter ? `: ${filter}` : ""}`,
         priority,
         params: { filter: filter ?? null, radius },
-        requeueOnPreempt: true
+        requeueOnPreempt: false
       },
       () => (token, report) => this.runCollectDrops(filter, radius, token, report)
     );
@@ -94,7 +94,7 @@ export class GatherService {
         label: `maden: ${ore} ${modeText} (${mode})`,
         priority,
         params: { ore, count: n, mode, countMode },
-        requeueOnPreempt: true
+        requeueOnPreempt: false
       },
       () => (token, report) => this.runMine(ore, n, mode, token, report, countMode)
     );
@@ -116,7 +116,7 @@ export class GatherService {
         label: `topla ${name} ${modeText}`,
         priority,
         params: { name, count: n, countMode },
-        requeueOnPreempt: true
+        requeueOnPreempt: false
       },
       () => (token, report) => this.runCollectBlock(name, n, token, report, countMode)
     );

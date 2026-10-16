@@ -271,7 +271,7 @@ export class TaskQueue extends EventEmitter {
           if (!reason || task.token.cancelled) return;
           limitError = reason;
           this.cancelAll(reason);
-          task.detach?.();
+          // Let bounded cancellation cleanup finish; existing 2s grace detaches hung runners.
         }, Math.min(250, Math.max(10, Math.min(timeoutMs || 250, noProgressMs || 250))));
 
         // Runner, iptali yutan bir await'te ASILI kalabilir (issue #4) —

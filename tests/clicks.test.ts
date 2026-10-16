@@ -20,3 +20,9 @@ test("cancelled click sends no packet",async()=>{
  const bot:any={_client:{write:()=>assert.fail("packet after cancellation")}};
  await assert.rejects(confirmedWindowClick(bot,0,0,{cancelled:true,reason:"user cancelled"}),/user cancelled/);
 });
+test("craft errors close the window and refresh inventory without another craft",async()=>{
+ const bot:any=new EventEmitter();bot._client={protocolVersion:775,state:"play"};bot.inventory={id:0};bot.clickWindow=async()=>{};bot.putAway=async()=>{};bot.putSelectedItemRange=async()=>{};let closed=0,refreshed=0,crafted=0;
+ bot.closeWindow=async(w:any)=>{assert.equal(w.id,0);closed++;};bot._syncWindow=async(w:any)=>{assert.equal(w.id,0);refreshed++;};bot.craft=async()=>{crafted++;throw new Error("cancelled midway");};
+ await assert.rejects(craftConfirmed(bot,{} as any,undefined,{cancelled:false}),/cancelled midway/);
+ assert.equal(closed,1);assert.equal(refreshed,1);assert.equal(crafted,1);
+});
