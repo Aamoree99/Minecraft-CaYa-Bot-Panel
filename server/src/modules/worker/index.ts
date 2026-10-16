@@ -24,7 +24,7 @@ export function parseJob(a: any, w: Workspace): Job {
     if (!["miner", "farmer", "warehouse", "crafter", "return"].includes(mode))
         throw Error("Unknown worker mode");
     const j: Job = { mode, item: String(a.item ?? "cobblestone").replace(/^minecraft:/, ""), count: a.count ?? 64, origin: a.origin ?? w.base, radius: a.radius ?? 4, deadlineMs: a.deadlineMs ?? 120000, attempts: a.attempts ?? 1, cycles: a.cycles ?? 1, intervalMs: a.intervalMs ?? 30000 };
-    for (const [k, min, max] of [["count", 1, 4096], ["radius", 1, 16], ["deadlineMs", 1000, 3600000], ["attempts", 1, 3], ["cycles", 1, 720], ["intervalMs", 5000, 300000]] as const)
+    for (const [k, min, max] of [["count", 1, 4096], ["radius", 1, 16], ["deadlineMs", 1000, 7200000], ["attempts", 1, 3], ["cycles", 1, 720], ["intervalMs", 5000, 300000]] as const)
         if (!Number.isInteger(j[k]) || j[k] < min || j[k] > max)
             throw Error(`Invalid worker ${k}`);
     if (!/^[a-z0-9_]+$/.test(j.item))
@@ -56,6 +56,7 @@ export class WorkerService {
         this.ledger = null;
     } }
     snapshot() { return this.ledger; }
+    interrupt(reason:string){if(this.ledger&&["RUNNING","QUEUED"].includes(this.ledger.state)){this.ledger.interruptionReason=reason;this.save();}}
     private save() {
         const pending=this.file+".pending";
         const fd=fs.openSync(pending,"w",0o600);
@@ -69,14 +70,14 @@ export class WorkerService {
             throw Error("A worker assignment is already active");
         if (this.instance.config.combat.defendMode !== "mob")
             throw Error("Worker requires mob-only self-defense");
-        const job = parseJob(a, workspace), record = { job, state: "QUEUED", startedAt: 0, finishedAt: 0, cycles: 0, produced: 0, deposited: 0, reason: "", events: [] as any[] };
+        const job = parseJob(a, workspace), record = { job, state: "QUEUED", startedAt: 0, finishedAt: 0, cycles: 0, produced: 0, deposited: 0, reason: "", interruptionReason:"", events: [] as any[] };
         this.ledger = record;
         this.save();
         let taskId:string|undefined;
         const updated=()=>{if(taskId&&record.state==="QUEUED"&&this.instance.tasks.currentSummary?.id!==taskId&&!this.instance.tasks.queueSummaries.some(t=>t.id===taskId))cleared("Queued assignment removed");};
         const cleared = (reason: string) => { if (record.state === "QUEUED") {
             record.state = "INTERRUPTED";
-            record.reason = reason;
+            record.reason = record.interruptionReason||reason;
             record.finishedAt = Date.now();
             this.save();
         } this.instance.tasks.removeListener("queueCleared", cleared);this.instance.tasks.removeListener("update",updated); };
@@ -197,6 +198,9 @@ export class WorkerService {
                         if (!bot.inventory.items().some(i => /_pickaxe$/.test(i.name) && usable(i, bot.registry, w.minDurability))) {
                             await supply("wooden_pickaxe", count("wooden_pickaxe") + 1);
                         }
+                        const capacity=bot.inventory.items().filter(i=>/_pickaxe$/.test(i.name)&&usable(i,bot.registry,w.minDurability)).reduce((n,i)=>n+Math.max(0,(bot.registry.items[i.type]?.maxDurability??0)-(i.durabilityUsed??0)-w.minDurability+1),0);
+                        const missingCapacity=Math.max(0,job.count-count(job.item)-capacity);
+                        if(missingCapacity){const max=bot.registry.itemsByName.wooden_pickaxe?.maxDurability??59;const spares=Math.ceil(missingCapacity/Math.max(1,max-w.minDurability+1));if(spares>8)throw Error("TOOL_CAPACITY: assignment needs more than8 spare tools; split into smaller jobs");await supply("wooden_pickaxe",count("wooden_pickaxe")+spares);}
                         token.workArea = { origin: job.origin, radius: job.radius };
                         let error: unknown;
                         for (let attempt = 0; attempt < job.attempts && count(job.item) < job.count; attempt++) {
@@ -260,7 +264,7 @@ export class WorkerService {
             }
             catch (e) {
                 record.state = token.cancelled ? "INTERRUPTED" : "FAILED";
-                record.reason = e instanceof Error ? e.message : String(e);
+                record.reason = record.interruptionReason||(e instanceof Error ? e.message : String(e));
                 throw e;
             }
             finally {

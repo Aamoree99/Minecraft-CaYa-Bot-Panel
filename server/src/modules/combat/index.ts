@@ -1429,7 +1429,7 @@ getRuntime(): CombatRuntime {
     report({ done: 1, total: 1, label: "fleeing tamam" });
     if (token.cancelled) throw new Error(token.reason ?? "cancelled");
     } catch(error) {
-      if(workspace && !token.cancelled){this.log().error("Retreat failed; safety disconnect",String(error));this.instance.stop();}
+      if(workspace && !token.cancelled){const reason=`RETREAT_FAILED: safety disconnect: ${String(error)}`;this.log().error("Retreat failed; safety disconnect",String(error));this.instance.worker.interrupt(reason);this.instance.stop();this.instance.runtime.lastError=reason;}
       throw error;
     } finally {this.setMode("idle",null);}
   }

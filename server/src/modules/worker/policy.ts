@@ -60,6 +60,10 @@ export function attachWorkspace(instance: BotInstance, bot: Bot): void {
         if (!bot.entity || instance.status !== "online")
             return;
         const p = bot.entity.position, v = bot.entity.velocity;
+        if(Object.values(bot.entities).some(e=>e.name==="creeper"&&e.position.distanceTo(p)<4)){
+            const reason="CREEPER_PROXIMITY: no safe separation; emergency disconnect";
+            instance.worker?.interrupt(reason);instance.tasks.cancelAll(reason);instance.stop();instance.runtime.lastError=reason;return;
+        }
         if (instance.runtime.dimension !== "overworld" || !insideWorld(w, p, 0)) {
             instance.tasks.cancelAll("BOUNDARY: outside authorized Overworld; explicit safe recovery required");
             instance.stop();
@@ -88,6 +92,8 @@ export function attachWorkspace(instance: BotInstance, bot: Bot): void {
     else
         assertOwned(block.position); if (this.heldItem && /bucket$/.test(this.heldItem.name))
         throw Error("SAFETY: worker liquid use is disabled"); return activate.call(this, block, ...args); }) as Bot["activateBlock"];
+    const activateItem=bot.activateItem;bot.activateItem=function(this:Bot,...args){if(this.heldItem&&/bucket$/.test(this.heldItem.name))throw Error("SAFETY: worker liquid use is disabled");return activateItem.call(this,...args);};
+    const furnace=bot.openFurnace;bot.openFurnace=(async function(this:Bot,block,...args){dimension();if(!containerAllowed(w,block.position))throw Error("OWNERSHIP: unassigned furnace");return furnace.call(this,block,...args);}) as Bot["openFurnace"];
     const open = bot.openContainer;
     bot.openContainer = (async function (this: Bot, block, ...args) { dimension(); if (!containerAllowed(w, block.position))
         throw Error("OWNERSHIP: unassigned container"); return open.call(this, block, ...args); }) as Bot["openContainer"];
