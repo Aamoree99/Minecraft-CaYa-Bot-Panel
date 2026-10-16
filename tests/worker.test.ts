@@ -64,3 +64,11 @@ test("worker forwards real child progress across child counter resets",async()=>
  for(const done of [0,1,0,1,2,2,3])report({done,total:64,label:"mining"});
  assert.deepEqual(updates.map(p=>p.done),[0,1,1,2,3,3,4]);
 });
+
+
+test("reviewed SAUNA fixture protects the supporting deck while allowing crops and quarry",async()=>{
+ const fs=await import("node:fs");const {owned}=await import("../server/src/modules/worker/policy");
+ const fixture=parseWorkspace(JSON.parse(fs.readFileSync("config/sauna-worker.json","utf8")));
+ for(const p of [{x:970,y:200,z:955},{x:954,y:200,z:969},{x:954,y:200,z:965}])assert.equal(owned(fixture,p),false);
+ for(const p of [{x:970,y:201,z:955},{x:954,y:201,z:969}])assert.equal(owned(fixture,p),true);
+});
