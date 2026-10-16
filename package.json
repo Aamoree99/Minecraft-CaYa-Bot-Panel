@@ -3,7 +3,7 @@
   "version": "1.0.4",
   "private": true,
   "license": "MIT",
-  "author": "ÇAĞAN TURGUT (CaYatur)",
+  "author": "\u00c7A\u011eAN TURGUT (CaYatur)",
   "description": "Minecraft CaYa Bot Panel - multi-bot control panel (mineflayer)",
   "main": "electron/main.cjs",
   "workspaces": [
@@ -23,7 +23,8 @@
     "test:grok": "node scripts/grok-smoke-all.mjs",
     "test:all": "node scripts/combat-test.mjs && node scripts/full-suite.mjs && node scripts/smoke.mjs && node scripts/movement-test.mjs && node scripts/inventory-test.mjs && node scripts/grok-smoke-all.mjs",
     "electron:dev": "electron .",
-    "dist:win": "npm run build && electron-builder --win nsis portable"
+    "dist:win": "npm run build && electron-builder --win nsis portable",
+    "test:unit": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "express": "^4.21.0",
@@ -46,7 +47,7 @@
   "build": {
     "appId": "com.cayadev.caya-bot-panel",
     "productName": "Minecraft CaYa Bot Panel",
-    "copyright": "Copyright © 2026 CaYatur",
+    "copyright": "Copyright \u00a9 2026 CaYatur",
     "asar": false,
     "directories": {
       "output": "dist-electron"
