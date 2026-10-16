@@ -1,6 +1,9 @@
 /** Source decrease AND destination increase must agree; never count a predicted click alone. */
 export function transferredCount(before: readonly [number, number], after: readonly [number, number], wanted: number): number {
-  return Math.max(0, Math.min(wanted, before[0] - after[0], after[1] - before[1]));
+  const removed = before[0] - after[0], added = after[1] - before[1];
+  if (removed !== added || removed < 0 || removed > wanted)
+    throw new Error(`TRANSFER_MISMATCH: source=${removed}, destination=${added}, requested=${wanted}; reconcile before retry`);
+  return removed;
 }
 
 interface Stack { type: number; count: number; stackSize: number }

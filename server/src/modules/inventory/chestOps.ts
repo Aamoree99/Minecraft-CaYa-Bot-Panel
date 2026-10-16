@@ -184,7 +184,7 @@ async function depositToChestUnlocked(
         let opFailed = false;
         try {
           if (!win.deposit) throw new Error("Chest deposit API unavailable");
-          await transferWithConfirmation(win as never, def.id, chunk, false, (slot, button) => confirmedWindowClick(bot, slot, button, token), async () => {} );
+          await transferWithConfirmation(win as never, def.id, chunk, false, (slot, button) => confirmedWindowClick(bot, slot, button, token), async () => { await confirmWindow(bot, win, token); } );
         } catch (e) {
           lastError = e instanceof Error ? e.message : String(e);
           opFailed = true;
@@ -274,7 +274,7 @@ async function withdrawFromChestUnlocked(
       let opFailed = false;
       try {
         if (!win.withdraw) throw new Error("Chest withdraw API unavailable");
-        await transferWithConfirmation(win as never, def.id, chunk, true, (slot, button) => confirmedWindowClick(bot, slot, button, token), async () => {} );
+        await transferWithConfirmation(win as never, def.id, chunk, true, (slot, button) => confirmedWindowClick(bot, slot, button, token), async () => { await confirmWindow(bot, win, token); } );
       } catch (e) {
         lastError = e instanceof Error ? e.message : String(e);
         opFailed = true;
