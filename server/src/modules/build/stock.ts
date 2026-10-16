@@ -86,7 +86,11 @@ export class ChestStockIndex {
         z: Math.floor(row.z),
         dimension,
         blockName: "chest",
-        items: new Map(row.items.map((i) => [i.name.replace(/^minecraft:/, ""), i.count])),
+        items: row.items.reduce((items, i) => {
+          const name = i.name.replace(/^minecraft:/, "");
+          items.set(name, (items.get(name) ?? 0) + i.count);
+          return items;
+        }, new Map<string, number>()),
         updatedAt: 0,
         seeded: true,
         failures: 0
@@ -374,6 +378,7 @@ export async function fetchFromStorage(
           onActivity(`Withdrawn: ${n} ×${amount}`);
           await sleep(60);
         }
+        recordSnapshot(instance, index, target, block.name, containerItems(container));
       } finally {
         try {
           container.close();
@@ -457,6 +462,7 @@ export async function makeInventoryRoom(
             break; // container full
           }
         }
+        recordSnapshot(instance, index, target, block.name, containerItems(container));
       } finally {
         try {
           container.close();
@@ -470,3 +476,4 @@ export async function makeInventoryRoom(
   }
   return bot.inventory.emptySlotCount() >= slotsWanted;
 }
+

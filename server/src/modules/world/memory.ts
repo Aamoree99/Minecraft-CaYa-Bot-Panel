@@ -52,6 +52,7 @@ export class WorldMemory {
     const existing = this.data.chests.find(
       (c) =>
         c.serverId === input.serverId &&
+        c.dimension === input.dimension &&
         Math.floor(c.x) === Math.floor(input.x) &&
         Math.floor(c.y) === Math.floor(input.y) &&
         Math.floor(c.z) === Math.floor(input.z)
