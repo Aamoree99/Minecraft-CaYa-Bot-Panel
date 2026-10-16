@@ -238,11 +238,13 @@ export class WorkerService {
                             throw Error("Unsupported assigned crop");
                         if (count(seed) < 1)
                             await supply(seed, 8);
+                        const harvestBefore=count(job.item);
+                        const crop=({wheat:"wheat",carrot:"carrots",potato:"potatoes",beetroot:"beetroots"} as Record<string,string>)[job.item];
                         await runGoto(this.instance,job.origin.x,job.origin.y,job.origin.z,2,token,report,{canDig:false,allowPlace:false,timeoutMs:30000});
                         token.workArea = { origin: job.origin, radius: Math.ceil(job.radius*Math.SQRT2)+1 };
-                        result = await this.instance.farm.runHarvest({ ...job.origin, radius: job.radius, maxBlocks: 64, replant: true, depositNearest: false }, token, report);
-                        record.produced += Math.max(0, count(job.item) - before);
-                        note("HARVEST", { result });
+                        result = await this.instance.farm.runHarvest({ ...job.origin, assignedCrop:crop, radius: job.radius, maxBlocks: 64, replant: true, depositNearest: false }, token, report);
+                        record.produced += Math.max(0, count(job.item) - harvestBefore);
+                        note("HARVEST", { result, baseline:harvestBefore, remaining:count(job.item) });
                         if (/failed: [1-9]|error/i.test(result))
                             throw Error(result);
                     }

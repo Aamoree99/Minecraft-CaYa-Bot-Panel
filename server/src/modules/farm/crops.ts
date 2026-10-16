@@ -97,3 +97,8 @@ export function isMatureCrop(block: Block): boolean {
     return false;
   }
 }
+
+/** Optional explicit crop assignment; unassigned harvest retains its existing behavior. */
+export function matchesHarvestCrop(block: Block, crop?: string): boolean {
+  return (!crop || block.name===crop) && isMatureCrop(block);
+}

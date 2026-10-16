@@ -120,3 +120,35 @@ test("worker allows spectator observation but guards nearby interactive players"
  for(const mode of [0,1,2,undefined]){bot.players.owner.gamemode=mode;assert.equal(nearbyWorkerVisitor(bot),true);}
  bot.players.owner.entity.position=new Vec3(25,201,0);assert.equal(nearbyWorkerVisitor(bot),false);
 });
+
+
+test("assigned harvest ignores mature neighboring crops",async()=>{
+ const {matchesHarvestCrop}=await import("../server/src/modules/farm/crops");
+ const block=(name:string,age:number)=>({name,getProperties:()=>({age})}) as any;
+ assert.equal(matchesHarvestCrop(block("wheat",7),"carrots"),false);
+ assert.equal(matchesHarvestCrop(block("carrots",0),"carrots"),false);
+ assert.equal(matchesHarvestCrop(block("carrots",7),"carrots"),true);
+ assert.equal(matchesHarvestCrop(block("wheat",7)),true);
+});
+
+test("worker excludes warehouse seed provision from same-item crop production",async()=>{
+ const fs=await import("node:fs"),os=await import("node:os"),path=await import("node:path"),cp=await import("node:child_process");
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),"caya-crop-unit-"));
+ try{const config=path.join(dir,"workspace.json");fs.writeFileSync(config,JSON.stringify({...w,dimension:"overworld",containers:{FOOD:{x:960,y:201,z:960}}}));
+ const result=cp.spawnSync(process.execPath,["--import","tsx","-e",`
+ (async()=>{
+ const assert=require('node:assert/strict'),{EventEmitter}=require('node:events'),{Vec3}=require('vec3');
+ const movementPath=require.resolve('./server/src/modules/movement/index.ts');const movement=require(movementPath);require.cache[movementPath].exports={...movement,runGoto:async()=>{}};
+ const chestPath=require.resolve('./server/src/modules/inventory/chestOps.ts');const chest={...require(chestPath)};require.cache[chestPath].exports=chest;let carrots=0,stock=8;
+ chest.readChestStock=async()=>({carrot:stock});chest.withdrawFromChest=async(_,spec)=>{assert.equal(spec.item,'carrot');carrots+=spec.count;stock-=spec.count;};
+ chest.depositToChest=async()=>{const n=Math.max(0,carrots-4);stock+=n;carrots-=n;return {moved:[],movedTotal:n,left:[]};};
+ const {TaskQueue}=require('./server/src/core/TaskQueue.ts'),{WorkerService}=require('./server/src/modules/worker/index.ts');
+ const bot=new EventEmitter();Object.assign(bot,{username:'Worker',health:20,food:20,players:{},entity:{position:new Vec3(960,201,960)},registry:{itemsByName:{carrot:{id:1}},items:{1:{name:'carrot'}}},inventory:{items:()=>[{name:'bread',count:4},...(carrots?[{name:'carrot',count:carrots}]:[])]}});
+ let crop;const instance={bot,status:'online',config:{id:'crop',combat:{defendMode:'mob'},survival:{foodBlacklist:[]},inventory:{bannedItems:[]}},tasks:new TaskQueue(),combat:{equipBestWeapon:async()=>{}},farm:{runHarvest:async o=>{crop=o.assignedCrop;return 'No mature crops';}}};
+ const worker=new WorkerService(instance);worker.enqueue({mode:'farmer',item:'carrot',radius:1});
+ const end=Date.now()+2000;while(['RUNNING','QUEUED'].includes(worker.snapshot().state)&&Date.now()<end)await new Promise(r=>setTimeout(r,10));
+ assert.equal(worker.snapshot().state,'DONE',worker.snapshot().reason);assert.equal(crop,'carrots');assert.equal(worker.snapshot().produced,0);assert.equal(carrots+stock,8);
+ })().catch(e=>{console.error(e);process.exitCode=1});
+ `],{cwd:process.cwd(),env:{...process.env,CAYA_DATA_DIR:dir,CAYA_WORKSPACE_FILE:config},encoding:"utf8",timeout:10000});assert.equal(result.status,0,result.stderr+result.stdout);
+ }finally{fs.rmSync(dir,{recursive:true,force:true});}
+});

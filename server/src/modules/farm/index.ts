@@ -16,6 +16,7 @@ import {
   FARM_PRODUCE,
   HOE_ORDER,
   isMatureCrop,
+  matchesHarvestCrop,
   seedForCrop,
   TILLABLE
 } from "./crops";
@@ -49,6 +50,8 @@ export interface PlantOpts extends FarmArea {
 }
 
 export interface HarvestOpts extends FarmArea {
+  /** Exact assigned crop block (e.g. carrots); omitted means all mature crops. */
+  assignedCrop?: string;
   replant?: boolean;
   maxBlocks?: number;
   depositX?: number;
@@ -934,7 +937,8 @@ export class FarmService {
     const c = areaCenter(this.instance, opts);
     const replant = opts.replant !== false;
     const max = Math.max(1, Math.min(1024, opts.maxBlocks ?? (2 * c.r + 1) ** 2));
-    const cells = scanArea(bot, c, (b) => isMatureCrop(b), max);
+    if(opts.assignedCrop && !CROPS[opts.assignedCrop])throw Error("Unsupported harvest crop");
+    const cells = scanArea(bot, c, (b) => matchesHarvestCrop(b,opts.assignedCrop), max);
     if (!cells.length) return `No mature crops within r=${c.r} of ${c.x},${c.y},${c.z} — they may still be growing.`;
 
     let harvested = 0;
@@ -957,7 +961,7 @@ export class FarmService {
         continue;
       }
       const live = bot.blockAt(cell.position);
-      if (!live || !isMatureCrop(live)) continue; // biri önce kırdı
+      if (!live || !matchesHarvestCrop(live,opts.assignedCrop)) continue; // biri önce kırdı
       try {
         await digCancelable(bot, live, token);
         harvested++;
