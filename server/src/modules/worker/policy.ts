@@ -16,6 +16,7 @@ export interface Workspace {
     margin: number;
     base: Point;
     owned: Box[];
+    protected: Box[];
     containers: Record<string, Point>;
     minDurability: number;
     criticalHealth: number;
@@ -25,12 +26,13 @@ export function parseWorkspace(v: any): Workspace {
     const point = (p: any): p is Point => p && [p.x, p.y, p.z].every(Number.isFinite);
     if (!v || v.dimension !== "overworld" || !point(v.spawn) || !point(v.base) || !Number.isFinite(v.margin) || v.margin < 4 || v.margin > 64 || !Array.isArray(v.owned) || !v.containers)
         throw Error("Invalid trusted Overworld workspace");
-    const w: Workspace = { ...v, minDurability: v.minDurability ?? 8, criticalHealth: v.criticalHealth ?? 8, foodThreshold: v.foodThreshold ?? 14 };
+    const w: Workspace = { ...v, protected:v.protected??[], minDurability: v.minDurability ?? 8, criticalHealth: v.criticalHealth ?? 8, foodThreshold: v.foodThreshold ?? 14 };
     if (!Number.isFinite(w.minDurability) || w.minDurability < 1)
         throw Error("Invalid durability threshold");
     if (!Number.isFinite(w.criticalHealth) || w.criticalHealth < 2 || w.criticalHealth > 18 || !Number.isFinite(w.foodThreshold) || w.foodThreshold < 1 || w.foodThreshold > 20)
         throw Error("Invalid survival thresholds");
-    for (const b of w.owned)
+    if(!Array.isArray(w.protected))throw Error("Invalid protected boxes");
+    for (const b of [...w.owned,...w.protected])
         if (!point(b.min) || !point(b.max) || ["x", "y", "z"].some(k => (b.min as any)[k] > (b.max as any)[k]) || !insideWorld(w, b.min) || !insideWorld(w, b.max))
             throw Error("Invalid owned workspace box");
     for (const p of [w.base, ...Object.values(w.containers)])
@@ -40,7 +42,7 @@ export function parseWorkspace(v: any): Workspace {
 }
 export function insideWorld(w: Workspace, p: Point, padding = w.margin): boolean { return [p.x, p.y, p.z].every(Number.isFinite) && p.x >= w.spawn.x - 4000 + padding && p.x <= w.spawn.x + 4000 - padding && p.z >= w.spawn.z - 4000 + padding && p.z <= w.spawn.z + 4000 - padding && p.y >= -64 && p.y <= 319; }
 export function inBox(p: Point, b: Box): boolean { return p.x >= b.min.x && p.x <= b.max.x && p.y >= b.min.y && p.y <= b.max.y && p.z >= b.min.z && p.z <= b.max.z; }
-export function owned(w: Workspace, p: Point): boolean { return insideWorld(w, p) && w.owned.some(b => inBox(p, b)); }
+export function owned(w: Workspace, p: Point): boolean { return insideWorld(w, p) && w.owned.some(b => inBox(p, b)) && !w.protected.some(b=>inBox(p,b)); }
 export function containerAllowed(w: Workspace, p: Point): boolean { return insideWorld(w, p) && Object.values(w.containers).some(c => c.x === p.x && c.y === p.y && c.z === p.z); }
 export function usable(item: any, registry: any, min = 8): boolean { const max = registry?.items?.[item.type]?.maxDurability; if (!max)
     return true; const used = item.durabilityUsed ?? 0; return Number.isFinite(used) && used >= 0 && max - used >= min; }

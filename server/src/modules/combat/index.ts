@@ -1424,11 +1424,12 @@ getRuntime(): CombatRuntime {
     const t0 = Date.now();
     while (!token.cancelled && Date.now() - t0 < 30_000) {
       if ((bot.health ?? 0) > (this.cfg().fleeAtHealth ?? 6) + 4) break;
+      await this.instance.survival.maybeAutoEat();
       report({ done: 0, total: 1, label: `fleeing · can ${bot.health?.toFixed?.(0) ?? "?"}` });
       await sleep(500);
     }
 
-    report({ done: 1, total: 1, label: "fleeing tamam" });
+    report({ done: 1, total: 1, label: (bot.health??0)>(this.cfg().fleeAtHealth??6)+4?"retreated and recovered":"retreated; recovery incomplete at timeout" });
     if (token.cancelled) throw new Error(token.reason ?? "cancelled");
     } catch(error) {
       if(workspace && !token.cancelled){const reason=`RETREAT_FAILED: safety disconnect: ${String(error)}`;this.log().error("Retreat failed; safety disconnect",String(error));this.instance.worker.interrupt(reason);this.instance.stop();this.instance.runtime.lastError=reason;}

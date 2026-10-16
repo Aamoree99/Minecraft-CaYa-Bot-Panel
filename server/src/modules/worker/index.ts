@@ -30,10 +30,10 @@ export function parseJob(a: any, w: Workspace): Job {
             throw Error(`Invalid worker ${k}`);
     if (!/^[a-z0-9_]+$/.test(j.item))
         throw Error("Invalid item name");
-    for (const dx of [-j.radius, j.radius])
-        for (const dz of [-j.radius, j.radius])
-            if (!owned(w, { x: j.origin.x + dx, y: j.origin.y, z: j.origin.z + dz }))
-                throw Error("Worker search area must be wholly assigned own space");
+    if(!j.origin||!owned(w,j.origin))throw Error("Worker search origin outside own space or protected holes");
+    for(let x=Math.floor(j.origin.x-j.radius);x<=Math.ceil(j.origin.x+j.radius);x++)
+        for(let z=Math.floor(j.origin.z-j.radius);z<=Math.ceil(j.origin.z+j.radius);z++)
+            if(!owned(w,{x,y:j.origin.y,z}))throw Error("Worker search area must be wholly assigned own space without protected holes");
     return j;
 }
 export function category(name: string): string | undefined { if (name === "stick" || /(_log|_wood|_planks|_stem|_hyphae)$/.test(name))

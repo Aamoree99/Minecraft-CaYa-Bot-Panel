@@ -9,3 +9,5 @@ test("world access never implies ownership of arbitrary blocks or containers", (
 test("workspace startup fails closed on other dimensions and outside assignments", () => { assert.throws(() => parseWorkspace({ ...cfg, dimension: "nether" })); assert.throws(() => parseWorkspace({ ...cfg, base: { x: 5000, y: 201, z: 960 } })); assert.throws(() => parseWorkspace({ ...cfg, margin: 0 })); });
 test("durability reserve excludes worn/broken/non-finite damage", () => { const r = { items: { 1: { maxDurability: 100 } } }; for (const used of [93, 100, NaN, -1])
     assert.equal(usable({ type: 1, durabilityUsed: used }, r), false); assert.ok(usable({ type: 1, durabilityUsed: 92 }, r)); assert.ok(usable({ type: 2 }, r)); });
+
+test("owned workspaces cannot mutate explicitly protected containment",()=>{const w=parseWorkspace({...cfg,protected:[{min:{x:958,y:199,z:958},max:{x:960,y:202,z:960}}]});assert.equal(owned(w,{x:959,y:201,z:959}),false);assert.equal(owned(w,{x:970,y:201,z:970}),true);});

@@ -1,3 +1,5 @@
+import {isHostileMob} from "../combat/mobs";
+import {isDeadEntity} from "../combat/liveness";
 import {workspace} from "../worker/policy";
 import type { Bot } from "mineflayer";
 import type { BotInstance } from "../../core/BotInstance";
@@ -95,7 +97,9 @@ export class SurvivalService {
     const food = bot.food ?? 20;
     const health = bot.health ?? 20;
     const threshold = Math.max(this.cfg().eatAtFood ?? 14,health<20?18:0);
-    const combatBusy = this.instance.combat.getRuntime().fighting;
+    const combat=this.instance.combat.getRuntime();
+    const combatBusy = combat.fighting&&combat.mode!=="fleeing";
+    if(combat.fighting&&Object.values(bot.entities??{}).some(e=>isHostileMob(e.name??"")&&!isDeadEntity(e)&&e.position.distanceTo(bot.entity.position)<6))return false;
 
     // tok — yeme dene (spam "Food is full" engeli)
     if (food >= 20) return false;
@@ -181,6 +185,7 @@ export class SurvivalService {
   }
 
   enqueueHunt(radius = 32) {
+    if(workspace)throw Error("OWNERSHIP: animal hunting is disabled in the worker workspace");
     const r = Math.max(8, Math.min(64, Math.floor(radius)));
     return this.instance.tasks.enqueue(
       { type: "hunt", label: `avlan (r=${r})`, priority: PRIORITY.AUTO, params: { radius: r }, requeueOnPreempt: true },
@@ -196,6 +201,7 @@ export class SurvivalService {
   }
 
   enqueueAcquireFood() {
+    if(workspace)throw Error("OWNERSHIP: use assigned pantry; animal hunting is disabled");
     return this.instance.tasks.enqueue(
       { type: "acquire-food", label: "yemek edin", priority: PRIORITY.AUTO, params: {}, requeueOnPreempt: true },
       () => async (token, report) => {
