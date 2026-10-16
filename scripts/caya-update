@@ -47,6 +47,8 @@ install -d -m 700 -o root -g root "$BACKUP_DIR"
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 BACKUP="$BACKUP_DIR/caya-before-$STAMP.tar.gz"
 BUNDLE="$BACKUP_DIR/caya-source-$STAMP.bundle"
+NATIVE_CACHE_EXISTED=false
+[[ -d "$APP/.native-deps" ]] && NATIVE_CACHE_EXISTED=true
 WAS_ACTIVE=false
 systemctl is-active --quiet "$UNIT" && WAS_ACTIVE=true
 stopped=false
@@ -59,6 +61,12 @@ rollback() {
   if $stopped; then
     systemctl stop "$UNIT" || true
     if git_caya checkout --quiet "$PREVIOUS" && build; then
+      # A legacy ref has no .native-deps ignore rule. Preserve only a cache
+      # created by this update outside the tree so the next update stays usable.
+      if ! $NATIVE_CACHE_EXISTED && [[ -d "$APP/.native-deps" ]] &&
+          ! git_caya cat-file -e "$SOURCE_PREVIOUS:vendor/native/sources.json" 2>/dev/null; then
+        mv -- "$APP/.native-deps" "$BACKUP_DIR/native-deps-$STAMP"
+      fi
       git_caya update-ref "refs/caya/update-failed/$STAMP" "$CANDIDATE"
       git_caya update-ref "refs/heads/$BRANCH" "$SOURCE_PREVIOUS" "$CANDIDATE"
       git_caya switch --quiet "$BRANCH"

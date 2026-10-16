@@ -88,6 +88,8 @@ try:
   print("PASS",scenario,"exit",rc,"rollback build/start/health/preservation",flush=True)
  # Exercise the actual promotion boundary: legacy0696 -> bad native -> legacy,
  # followed by a successful legacy -> native transition, still with zero bots.
+ # Our native bootstrap cache is not ignored by historical legacy sources.
+ shutil.move(app/".native-deps",root/"native-cache-before-legacy")
  git("switch","-c","integration/legacy","0696a00")
  assert update("HEAD")==0,"legacy installation"
  legacy=git("rev-parse","HEAD");health("26.1");assert digest()==before
@@ -99,6 +101,7 @@ try:
  health("26.1");assert digest()==before
  assert (state/"deployed-revision").read_text().strip()==legacy
  assert git("rev-parse","HEAD")==legacy and not git("status","--porcelain")
+ assert list((state/"backups/updates").glob("native-deps-*")),"new native cache not preserved outside legacy tree"
  results.append({"scenario":"native-to-legacy-rollback","exit":rc,"rollback":"PASS"})
  print("PASS failed native promotion restores0696a00 legacy API/build",flush=True)
  assert update(baseline)==0,"legacy-to-native successful promotion"
