@@ -1071,6 +1071,7 @@ export class BotInstance extends EventEmitter {
 
     // death: CombatService kaydı + ölüm waypoint (BotManager deathAt dinler)
     bot.on("death", () => {
+      this.tasks.cancelAll("Bot died; task cancelled");
       this.log.warn("Bot died", `Position: ${fmtPos(this.runtime.position)}`);
     });
 

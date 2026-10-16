@@ -48,6 +48,8 @@ export type ProgressFn = (p: { done: number; total: number; label?: string }) =>
 export type TaskRunner = (token: TaskToken, report: ProgressFn) => Promise<void>;
 
 export interface TaskDef {
+  timeoutMs?: number;
+  noProgressMs?: number;
   type: string;
   label: string;
   priority: number;
@@ -252,11 +254,33 @@ export class TaskQueue extends EventEmitter {
         task.state = "running";
         this.emitUpdate();
 
+        const boundedSkill = /^(craft|collect-block|collect-wood|collect-drops|mine|deposit|withdraw|goto)$/.test(task.def.type);
+        const timeoutMs = task.def.timeoutMs ?? (boundedSkill ? 120_000 : 0);
+        const noProgressMs = task.def.noProgressMs ?? (boundedSkill ? 45_000 : 0);
+        const started = Date.now();
+        let lastProgress = started;
+        let bestDone = -1;
+        let limitError: string | undefined;
+        const guard = setInterval(() => {
+          const now = Date.now();
+          const reason = timeoutMs > 0 && now - started >= timeoutMs
+            ? `TIMEOUT: Task exceeded ${timeoutMs / 1000} seconds`
+            : noProgressMs > 0 && now - lastProgress >= noProgressMs
+              ? `No progress for ${noProgressMs / 1000} seconds` : undefined;
+          if (!reason || task.token.cancelled) return;
+          limitError = reason;
+          abortToken(task.token, reason);
+          this.emit("taskAbort", this.summarize(task), reason);
+          task.detach?.();
+        }, Math.min(250, Math.max(10, Math.min(timeoutMs || 250, noProgressMs || 250))));
+
         // Runner, iptali yutan bir await'te ASILI kalabilir (issue #4) —
         // detach yarışıyla kuyruk asla rehin kalmaz; zombi arkada söner.
         const runPromise = (async () => {
           const runner = task.makeRunner();
           await runner(task.token, (p) => {
+            if (task.token.cancelled || this.current !== task) return;
+            if (p.done > bestDone) { bestDone = p.done; lastProgress = Date.now(); }
             task.progress = p;
             this.emitUpdate();
           });
@@ -273,6 +297,7 @@ export class TaskQueue extends EventEmitter {
             task.detach = () => res("detached");
           })
         ]);
+        clearInterval(guard);
         task.detach = undefined;
         if (task.forceTimer) {
           clearTimeout(task.forceTimer);
@@ -292,6 +317,8 @@ export class TaskQueue extends EventEmitter {
         } else {
           task.state = task.token.cancelled ? "cancelled" : "done";
         }
+        if (limitError) { task.state = "failed"; task.error = limitError; }
+        if (task.token.cancelled && !task.error) task.error = task.token.reason;
         this.pushHistory(task);
         if (this.current === task) this.current = null;
         this.emitUpdate();
