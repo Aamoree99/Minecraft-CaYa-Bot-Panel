@@ -45,7 +45,7 @@ if [ "$*" = "run prepare:native-deps" ] && [ "$FAIL_BOOTSTRAP" = "yes" ]; then e
 
 
 test("native archive integrity is independent of restrictive updater file permissions",()=>{
- const result=spawnSync("python3",["-c",`
+ const result=spawnSync("python3",["-B","-c",`
 import importlib.util,tempfile,os
 from pathlib import Path
 spec=importlib.util.spec_from_file_location("native", "scripts/prepare-native-deps.py")
