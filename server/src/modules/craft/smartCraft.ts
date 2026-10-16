@@ -1,8 +1,10 @@
 import type { Bot } from "mineflayer";
 import type { BotInstance } from "../../core/BotInstance";
 import type { ProgressFn, TaskToken } from "../../core/TaskQueue";
+import { boundedOp, digCancelable } from "../build/place";
 import { runGoto } from "../movement";
 import { withdrawBuildMaterials } from "../build/storage";
+import { craftConfirmed } from "./confirmedCraft";
 import type { CraftPlanStep } from "./index";
 
 interface RecipeDelta {
@@ -371,7 +373,7 @@ async function executeRecipe(
     report({ done: before, total: targetCount, label: `Craft: ${itemName} ${before}/${targetCount}` });
     // One operation at a time: an exception may follow a partial server-side craft.
     // Never retry an ambiguous batch, which could duplicate the requested work.
-    await bot.craft(recipe, 1, (table ?? undefined) as never);
+    await craftConfirmed(bot, recipe, (table ?? undefined) as never, token);
     const deadline = Date.now() + 1500;
     while (countItem(bot, itemName) < before + expected && Date.now() < deadline && !token.cancelled) await sleep(50);
     if (token.cancelled) throw new Error(token.reason ?? "cancelled");
@@ -397,7 +399,7 @@ async function ensureCraftingTable(ctx: SmartCraftContext): Promise<unknown> {
   }
 
   if (!ctx.instance.config.movement.allowPlace) throw new Error("Crafting table required; none reachable and placing is disabled");
-  await ensureItem(ctx, "crafting_table", Math.max(1, countItem(bot, "crafting_table") + 1), 1);
+  await ensureItem(ctx, "crafting_table", 1, 1);
   const placed = await placePortableBlock(ctx, "crafting_table");
   ctx.portableTable = placed.position;
   return placed.block;
@@ -640,7 +642,7 @@ async function cleanupPortableBlock(
   expectedName: string,
   position: { x: number; y: number; z: number } | undefined
 ): Promise<void> {
-  if (!position) return;
+  if (!position || ctx.token.cancelled || ctx.instance.status !== "online" || !ctx.instance.config.movement.canDig) return;
   const { bot } = ctx;
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -651,9 +653,10 @@ async function cleanupPortableBlock(
     bot.pathfinder?.setGoal(null);
     bot.clearControlStates();
     await sleep(80);
-    await bot.dig(block);
+    if (ctx.token.cancelled) return;
+    await boundedOp(digCancelable(bot, block, ctx.token), ctx.token, 8000, "reclaim portable workstation");
     await sleep(120);
-    await ctx.instance.gather.runCollectDrops(expectedName, 7, { cancelled: false }, () => {});
+    await ctx.instance.gather.runCollectDrops(expectedName, 7, ctx.token, () => {});
   } catch {
     ctx.instance.getLogger().warn(`Temporary ${expectedName} could not reclaim`);
   }

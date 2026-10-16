@@ -17,3 +17,8 @@ test("craft uses existing materials without adding them again",()=>{
  const plan=smartPreviewPlan(instance([{name:"oak_planks",count:4}]),"crafting_table",1);
  assert.deepEqual(plan,[{kind:"craft",item:"crafting_table",count:1}]);
 });
+import {runSmartCraftInline} from "../server/src/modules/craft/smartCraft";
+test("strict craft does not recursively gather missing raw ingredients",async()=>{
+ const inst=instance();inst.status="online";inst.config={movement:{allowPlace:false}};inst.gather={runCollectBlock:()=>assert.fail("unexpected gathering")};
+ await assert.rejects(runSmartCraftInline(inst,"stick",4,{cancelled:false},()=>{},false),/Missing materials/);
+});
