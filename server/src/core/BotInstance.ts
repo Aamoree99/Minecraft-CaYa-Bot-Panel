@@ -1,3 +1,4 @@
+import { enableAuthMe } from "./authme";
 import { EventEmitter } from "events";
 import * as fs from "fs";
 import * as path from "path";
@@ -1013,6 +1014,7 @@ export class BotInstance extends EventEmitter {
     }
 
     this.bot = bot;
+    enableAuthMe(bot, this.config.username);
     this.hookBotEvents(bot);
   }
 
