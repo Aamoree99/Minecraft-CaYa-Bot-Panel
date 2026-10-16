@@ -18,6 +18,17 @@ flock -n 9 || { echo 'Another update is running' >&2; exit 2; }
 as_caya() { if [[ $(id -un) == "$USER_NAME" ]]; then env PATH="$PATH" "$@"; else runuser -u "$USER_NAME" -- env PATH="$PATH" "$@"; fi; }
 git_caya() { as_caya git -C "$APP" "$@"; }
 [[ -z $(git_caya status --porcelain) ]] || { echo 'Working tree is dirty; commit or preserve changes first' >&2; exit 2; }
+# Refuse owner/permission problems while the current service is still running.
+for output in "$APP/server/dist" "$APP/web/dist"; do
+  if [[ -d "$output" ]]; then
+    blocked=$(as_caya find "$output" ! -writable -print -quit)
+    [[ -z "$blocked" ]] || { echo "Build output not writable by $USER_NAME: $blocked; build as the service account" >&2; exit 2; }
+  fi
+done
+if [[ -d "$APP/node_modules" ]]; then
+  blocked=$(as_caya find "$APP/node_modules" -type d ! -writable -print -quit)
+  [[ -z "$blocked" ]] || { echo "Dependency directory not writable by $USER_NAME: $blocked" >&2; exit 2; }
+fi
 SOURCE_PREVIOUS=$(git_caya rev-parse HEAD)
 PREVIOUS=$SOURCE_PREVIOUS
 if [[ -f "$STATE/deployed-revision" ]]; then

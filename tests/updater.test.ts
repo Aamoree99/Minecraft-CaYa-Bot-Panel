@@ -18,3 +18,10 @@ test("updater uses the verified deployed revision rather than a newer developmen
  const r=spawnSync("bash",[resolve("scripts/caya-update"),"--check","HEAD"],{encoding:"utf8",env:{...process.env,CAYA_UPDATE_APP:app,CAYA_UPDATE_STATE:state,CAYA_UPDATE_USER:userInfo().username}});assert.equal(r.status,0,r.stderr);assert.ok(r.stdout.includes(`previous ${deployed}`),r.stdout);
  }finally {rmSync(dir,{recursive:true,force:true});}
 });
+test("unwritable generated output fails preflight before maintenance",{skip:process.getuid?.()===0},()=>{
+ const dir=mkdtempSync(join(tmpdir(),"caya-permissions-test-"));const app=join(dir,"repo"),state=join(dir,"state");mkdirSync(app);mkdirSync(state);
+ const git=(...args:string[])=>{const r=spawnSync("git",args,{cwd:app,encoding:"utf8"});assert.equal(r.status,0,r.stderr);};
+ try {git("init","-b","sauna/development");git("config","user.name","Test");git("config","user.email","test@example.test");writeFileSync(join(app,".gitignore"),"server/dist/\n");git("add",".gitignore");git("commit","-m","base");mkdirSync(join(app,"server/dist"),{recursive:true});writeFileSync(join(app,"server/dist/output.js"),"output",{mode:0o444});
+ const r=spawnSync("bash",[resolve("scripts/caya-update"),"--check","HEAD"],{encoding:"utf8",env:{...process.env,CAYA_UPDATE_APP:app,CAYA_UPDATE_STATE:state,CAYA_UPDATE_USER:userInfo().username}});assert.equal(r.status,2);assert.match(r.stderr,/not writable/);
+ }finally{rmSync(dir,{recursive:true,force:true});}
+});
