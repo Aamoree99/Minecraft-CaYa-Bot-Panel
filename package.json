@@ -3,7 +3,7 @@
   "version": "1.0.4",
   "private": true,
   "license": "MIT",
-  "author": "ÇAĞAN TURGUT (CaYatur)",
+  "author": "\u00c7A\u011eAN TURGUT (CaYatur)",
   "description": "Minecraft CaYa Bot Panel - multi-bot control panel (mineflayer)",
   "main": "electron/main.cjs",
   "workspaces": [
@@ -28,8 +28,8 @@
   },
   "dependencies": {
     "express": "^4.21.0",
-    "minecraft-data": "^3.111.0",
-    "mineflayer": "^4.39.0",
+    "minecraft-data": "npm:@wp2508/minecraft-data@3.111.6",
+    "mineflayer": "npm:@wp2508/mineflayer@4.42.2",
     "mineflayer-armor-manager": "^2.0.1",
     "mineflayer-pathfinder": "^2.4.5",
     "mineflayer-tool": "^1.2.0",
@@ -47,7 +47,7 @@
   "build": {
     "appId": "com.cayadev.caya-bot-panel",
     "productName": "Minecraft CaYa Bot Panel",
-    "copyright": "Copyright © 2026 CaYatur",
+    "copyright": "Copyright \u00a9 2026 CaYatur",
     "asar": false,
     "directories": {
       "output": "dist-electron"
@@ -85,5 +85,14 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
     }
+  },
+  "overrides": {
+    "mineflayer": "$mineflayer",
+    "minecraft-data": "$minecraft-data",
+    "minecraft-protocol": "npm:@wp2508/minecraft-protocol@1.69.1",
+    "protodef": "npm:@wp2508/protodef@1.19.2",
+    "prismarine-chat": "npm:@wp2508/prismarine-chat@1.13.2",
+    "prismarine-chunk": "npm:@wp2508/prismarine-chunk@1.41.3",
+    "prismarine-physics": "npm:@wp2508/prismarine-physics@1.12.3"
   }
 }

@@ -10,8 +10,8 @@
   },
   "dependencies": {
     "express": "^4.21.0",
-    "minecraft-data": "^3.111.0",
-    "mineflayer": "^4.39.0",
+    "minecraft-data": "npm:@wp2508/minecraft-data@3.111.6",
+    "mineflayer": "npm:@wp2508/mineflayer@4.42.2",
     "mineflayer-armor-manager": "^2.0.1",
     "mineflayer-pathfinder": "^2.4.5",
     "mineflayer-tool": "^1.2.0",
