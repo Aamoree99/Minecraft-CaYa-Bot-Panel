@@ -1,3 +1,4 @@
+import {isFood} from "../survival/foods";
 import fs from "node:fs";
 import path from "node:path";
 import { DATA_DIR } from "../../config/paths";
@@ -103,8 +104,7 @@ export class WorkerService {
             const check = () => { if (token.cancelled)
                 throw Error(token.reason ?? "Cancelled"); if (Date.now() >= end)
                 throw Error("DEADLINE"); if (this.instance.bot !== bot || this.instance.status !== "online")
-                throw Error("DISCONNECTED: explicit reconciliation required"); if (bot.health <= w.criticalHealth)
-                throw Error("CRITICAL_HEALTH"); if (Object.values(bot.players).some(p => p.username !== bot.username && p.entity && p.entity.position.distanceTo(bot.entity.position) < 24))
+                throw Error("DISCONNECTED: explicit reconciliation required"); if (bot.health <= w.criticalHealth) {if(bot.health>0)this.instance.combat.enqueueFlee();throw Error("CRITICAL_HEALTH");} if (Object.values(bot.players).some(p => p.username !== bot.username && p.entity && p.entity.position.distanceTo(bot.entity.position) < 24))
                 throw Error("OWNERSHIP: another player near work area"); };
             const count = (item: string) => bot.inventory.items().reduce((s, i) => s + (i.name === item ? i.count : 0), 0);
             const health = () => { if (bot.health <= (w.criticalHealth ?? 8)) {
@@ -138,6 +138,8 @@ export class WorkerService {
                 for (let cycle = 0; cycle < job.cycles; cycle++) {
                     check();
                     note("CHECK", { cycle, health: bot.health, food: bot.food });
+                    if(job.mode!=="return"&&!bot.inventory.items().some(i=>isFood(i.name)&&!this.instance.config.survival.foodBlacklist.includes(i.name)&&!this.instance.config.inventory.bannedItems.includes(i.name))){const p=w.containers.FOOD;if(!p)throw Error("MISSING_FOOD_CONTAINER");await withdrawFromChest(this.instance,{...p,item:"bread",count:4},token,report);note("FOOD_PROVISIONED");}
+
                     if (bot.food <= w.foodThreshold) {
                         if (!await this.instance.survival.eatBest()) {
                             const p = w.containers.FOOD;

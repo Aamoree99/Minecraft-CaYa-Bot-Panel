@@ -1,3 +1,4 @@
+import {workspace} from "../worker/policy";
 import type { Bot } from "mineflayer";
 import type { BotInstance } from "../../core/BotInstance";
 import { PRIORITY, type ProgressFn, type TaskToken } from "../../core/TaskQueue";
@@ -16,7 +17,12 @@ import { WaterGuardService, type WaterGuardState } from "./waterGuard";
 export class SurvivalService {
   private bot: Bot | null = null;
   private eating = false;
+  private currentMeal: Promise<boolean> | null = null;
+  private mealBot: Bot | null = null;
   private lastEatAt = 0;
+  private warnedNoFood=false;
+  private eatRetryTimer: ReturnType<typeof setTimeout> | undefined;
+  private inventoryHook: (()=>void) | null = null;
   private healthHook: (() => void) | null = null;
   private lastSwing = { t: 0 };
   readonly fallGuard: FallGuardService;
@@ -36,6 +42,8 @@ export class SurvivalService {
     this.bot = bot;
     this.healthHook = () => void this.maybeAutoEat();
     bot.on("health", this.healthHook);
+    this.inventoryHook=()=>{void this.maybeAutoEat();};
+    bot.inventory.on("updateSlot",this.inventoryHook);
     this.fallGuard.attach(bot);
     this.waterGuard.attach(bot);
     this.hazardGuard.attach(bot);
@@ -43,6 +51,9 @@ export class SurvivalService {
   }
 
   detach() {
+    this.eating=false;this.currentMeal=null;this.mealBot=null;
+    if(this.eatRetryTimer)clearTimeout(this.eatRetryTimer);this.eatRetryTimer=undefined;
+    if(this.bot&&this.inventoryHook)this.bot.inventory.removeListener("updateSlot",this.inventoryHook);this.inventoryHook=null;
     this.bucketScoop.detach();
     this.hazardGuard.detach();
     this.waterGuard.detach();
@@ -83,7 +94,7 @@ export class SurvivalService {
 
     const food = bot.food ?? 20;
     const health = bot.health ?? 20;
-    const threshold = this.cfg().eatAtFood ?? 14;
+    const threshold = Math.max(this.cfg().eatAtFood ?? 14,health<20?18:0);
     const combatBusy = this.instance.combat.getRuntime().fighting;
 
     // tok — yeme dene (spam "Food is full" engeli)
@@ -97,6 +108,13 @@ export class SurvivalService {
   }
 
   async eatBest(): Promise<boolean> {
+    const bot=this.bot??this.instance.bot;
+    if(this.currentMeal&&this.mealBot===bot)return this.currentMeal;
+    const meal=this.consumeBest();this.currentMeal=meal;this.mealBot=bot;
+    try{return await meal;}finally{if(this.currentMeal===meal){this.currentMeal=null;this.mealBot=null;}}
+  }
+
+  private async consumeBest(): Promise<boolean> {
     const bot = this.bot ?? this.instance.bot;
     if (!bot || this.instance.status !== "online") return false;
 
@@ -122,9 +140,11 @@ export class SurvivalService {
     }
 
     this.eating = true;
+    let consumed=false;
     try {
       await bot.equip(item, "hand");
       await bot.consume();
+      consumed=true;
       this.lastEatAt = Date.now();
       this.log().success(`Yendi: ${item.displayName ?? item.name}`);
       return true;
@@ -139,7 +159,11 @@ export class SurvivalService {
       }
       return false;
     } finally {
-      this.eating = false;
+      if(this.bot===bot)this.eating = false;
+      if(consumed&&this.bot===bot&&this.cfg().autoEat){
+        if(this.eatRetryTimer)clearTimeout(this.eatRetryTimer);
+        this.eatRetryTimer=setTimeout(()=>{this.eatRetryTimer=undefined;void this.maybeAutoEat();},2600);
+      }
     }
   }
 
@@ -345,9 +369,10 @@ export class SurvivalService {
   tickFoodWatch() {
     const bot = this.bot;
     if (!bot || !this.cfg().autoEat) return;
+    const hasFood = bot.inventory.items().some((i) => isFood(i.name) && !(this.cfg().foodBlacklist ?? []).includes(i.name) && !this.banned().includes(i.name));
+    if (hasFood) {this.warnedNoFood=false;void this.maybeAutoEat();return;}
     if ((bot.food ?? 20) > 6) return;
-    const hasFood = bot.inventory.items().some((i) => isFood(i.name) && !(this.cfg().foodBlacklist ?? []).includes(i.name));
-    if (hasFood) return;
+    if(workspace){if(!this.warnedNoFood)this.log().warn("No food: assigned pantry supply required; automatic animal hunting disabled");this.warnedNoFood=true;return;}
     const cur = this.instance.tasks.currentSummary;
     if (cur && (cur.type === "acquire-food" || cur.type === "hunt" || cur.type === "cook")) return;
     this.log().info("No food and low hunger — acquire-food task queued");
