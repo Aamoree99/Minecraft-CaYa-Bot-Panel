@@ -80,8 +80,8 @@ try:
   assert (state/"deployed-revision").read_text().strip()==baseline
   assert git("rev-parse","HEAD")==baseline
   assert not git("status","--porcelain"),scenario+" dirty rollback tree"
-  text=(root/"integration.log").read_text()[offset:]
-  expected={"bootstrap":"Dependency integrity mismatch", "npm-ci":"npm ci", "build":"process.exit(42)","start":"Update failed", "health":"503"}[scenario]
+  text=(root/"integration.log").read_bytes()[offset:].decode(errors="replace")
+  expected={"bootstrap":"Dependency integrity mismatch", "npm-ci":"npm error code ETARGET", "build":"process.exit(42)","start":"Update failed", "health":"503"}[scenario]
   assert expected in text,scenario+" missing failure evidence"
   assert "Rollback build failed" not in text and "Rollback service health failed" not in text
   results.append({"scenario":scenario,"exit":rc,"rollback":"PASS"})
