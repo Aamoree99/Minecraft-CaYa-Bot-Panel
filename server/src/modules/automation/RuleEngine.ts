@@ -1,3 +1,4 @@
+import { workspace } from "../worker/policy";
 import { loadJson, saveJson } from "../../persistence/store";
 import type { BotManager } from "../../core/BotManager";
 import { createLogger } from "../../utils/logger";
@@ -399,6 +400,7 @@ export class RuleEngine {
         label,
         task: taskType,
         taskLabel: label,
+        workerState: taskType === "worker" ? this.manager.get(botId)?.worker.snapshot()?.state ?? "" : "",
         status: kind,
         taskStatus: result?.state ?? kind,
         taskId: result?.taskId ?? "",
@@ -1135,8 +1137,7 @@ export class RuleEngine {
     timeoutMs: number,
     cancelGeneration: number
   ): Promise<AutomationActionResult> {
-    const inst = this.manager.get(botId);
-    if (!inst) throw new Error("Bot not found");
+    const inst = this.actionBot(botId,action);
     const before = new Set(this.allTaskSummaries(inst).map((task) => task.id));
     await this.runAction(botId, action, stringifyContext(ctx));
     const created = this.allTaskSummaries(inst).find((task) => !before.has(task.id));
@@ -1145,6 +1146,8 @@ export class RuleEngine {
     }
     if (!waitForTask) return this.taskResult(String(action.type), created);
     const finalTask = await this.waitForTask(inst, created.id, timeoutMs, botId, cancelGeneration);
+    if(action.type==="worker"&&finalTask.state==="done"&&inst.worker.snapshot()?.state!=="DONE")
+      throw Error("Dependent Worker did not complete: "+inst.worker.snapshot()?.state);
     return this.taskResult(String(action.type), finalTask);
   }
 
@@ -1164,13 +1167,17 @@ export class RuleEngine {
     cancelGeneration: number
   ): Promise<TaskSummary> {
     const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-      this.assertRunActive(botId, cancelGeneration);
-      const task = this.allTaskSummaries(inst).find((item) => item.id === taskId);
-      if (task && ["done", "failed", "cancelled"].includes(task.state)) return task;
-      await sleep(100);
-    }
-    return { id: taskId, type: "unknown", label: "timeout", state: "failed", error: "timeout" };
+    try {
+      while (Date.now() < deadline) {
+        this.assertRunActive(botId, cancelGeneration);
+        const task = this.allTaskSummaries(inst).find((item) => item.id === taskId);
+        if (task && ["done", "failed", "cancelled"].includes(task.state)) return task;
+        if(inst.status!=="online")throw Error("Dependent bot disconnected; reconcile before resubmitting");
+        await sleep(100);
+      }
+      inst.tasks.cancel(taskId,"Dependent action timeout");
+      return { id: taskId, type: "unknown", label: "timeout", state: "failed", error: "timeout" };
+    } catch(error) { inst.tasks.cancel(taskId,"Dependent flow cancelled");throw error; }
   }
 
   private taskResult(actionType: string, task: TaskSummary): AutomationActionResult {
@@ -1278,9 +1285,24 @@ export class RuleEngine {
     }
   }
 
+  /** Reuse bounded automation flows for a deliberately named roster partner. */
+  private actionBot(botId:string,action:RuleAction) {
+    const source=this.manager.get(botId);
+    if(!source)throw Error("Bot not found");
+    if(action.partnerBotId===undefined || action.partnerBotId===botId)return source;
+    if(typeof action.partnerBotId!=="string")throw Error("Invalid partner bot ID");
+    if(!["worker","deposit","withdraw","report_status","send_chat"].includes(String(action.type)))throw Error("Partner action not permitted");
+    const target=this.manager.get(action.partnerBotId);
+    const roster=new Set(workspace?.partnerUuids??[]);
+    const id=(i:typeof source)=>i.bot?.players?.[i.config.username]?.uuid?.toLowerCase();
+    if(!target || source.status!=="online" || target.status!=="online" ||
+      source.config.serverId!==target.config.serverId || source.runtime.dimension!==target.runtime.dimension ||
+      !roster.has(id(source)??"") || !roster.has(id(target)??""))throw Error("Explicit online worker partner in the same world required");
+    return target;
+  }
+
   private async runAction(botId: string, action: RuleAction, ctx: Record<string, string>) {
-    const inst = this.manager.get(botId);
-    if (!inst) return;
+    const inst = this.actionBot(botId,action);
     const type = String(action.type);
 
     if (this.dryRun) {
@@ -1303,8 +1325,8 @@ export class RuleEngine {
     }
     // Tek aksiyonda bot durumu özeti (sohbet veya panel)
     if (type === "report_status" || type === "bot_status" || type === "durum-raporu") {
-      const live = this.liveBotContext(botId);
-      const merged = { ...live, ...ctx };
+      const live = this.liveBotContext(inst.config.id);
+      const merged = action.partnerBotId ? { ...ctx, ...live } : { ...live, ...ctx };
       const line =
         action.message != null && String(action.message).trim()
           ? interpolate(String(action.message), merged)
