@@ -22,3 +22,16 @@ test("strict craft does not recursively gather missing raw ingredients",async()=
  const inst=instance();inst.status="online";inst.config={movement:{allowPlace:false}};inst.gather={runCollectBlock:()=>assert.fail("unexpected gathering")};
  await assert.rejects(runSmartCraftInline(inst,"stick",4,{cancelled:false},()=>{},false),/Missing materials/);
 });
+test("craft report distinguishes new output from existing inventory",async()=>{
+ const items=[{name:"stick",count:4},{name:"oak_planks",count:2}];const inst=instance(items);inst.status="online";inst.config={movement:{allowPlace:false}};
+ inst.bot._client={protocolVersion:769};inst.bot.recipesFor=(id:number)=>Recipe.find(id,null).filter((r:any)=>r.delta.every((d:any)=>d.count>=0||items.filter(i=>registry.itemsByName[i.name].id===d.id).reduce((s,i)=>s+i.count,0)>=-d.count));
+ inst.bot.craft=async(r:any)=>{for(const delta of r.delta){const name=registry.items[delta.id].name;let entry=items.find(i=>i.name===name);if(!entry){entry={name,count:0};items.push(entry);}entry.count+=delta.count;}};
+ let result:any;await runSmartCraftInline(inst,"stick",8,{cancelled:false},p=>result=p,false);
+ assert.equal(items.find(i=>i.name==="stick")!.count,8);assert.match(result.label,/Crafted \+4 stick/);
+});
+test("late craft error does not retry a verified server result",async()=>{
+ const items=[{name:"oak_planks",count:2}];const inst=instance(items);inst.status="online";inst.config={movement:{allowPlace:false}};inst.bot._client={protocolVersion:769};let calls=0;
+ inst.bot.recipesFor=(id:number)=>Recipe.find(id,null).filter((r:any)=>r.delta.every((d:any)=>d.count>=0||items.filter(i=>registry.itemsByName[i.name].id===d.id).reduce((s,i)=>s+i.count,0)>=-d.count));
+ inst.bot.craft=async(r:any)=>{calls++;for(const d of r.delta){const name=registry.items[d.id].name;let entry=items.find(i=>i.name===name);if(!entry){entry={name,count:0};items.push(entry);}entry.count+=d.count;}throw Error("late window error");};
+ await runSmartCraftInline(inst,"stick",4,{cancelled:false},()=>{},false);assert.equal(calls,1);assert.equal(items.find(i=>i.name==="stick")!.count,4);
+});

@@ -253,6 +253,7 @@ export async function runSmartCraftInline(
   const bot = requireBot(instance);
   const name = normalize(item);
   const target = Math.max(1, Math.min(4096, Math.floor(count)));
+  const initialCount=countItem(bot,name);
   const ctx: SmartCraftContext = {
     instance,
     bot,
@@ -269,7 +270,8 @@ export async function runSmartCraftInline(
     if (finalCount < target) {
       throw new Error(`${name}: target ${target}, inventory ${finalCount}`);
     }
-    report({ done: target, total: target, label: `Craft tamam: ${name} ×${finalCount}` });
+    const gained=finalCount-initialCount;
+    report({ done: Math.min(gained,Math.max(0,target-initialCount)), total:Math.max(0,target-initialCount), label:`${acquire ? "Acquired" : "Crafted"} +${gained} ${name}; inventory ${finalCount}` });
   } finally {
     await cleanupPortableBlock(ctx, "crafting_table", ctx.portableTable);
     await cleanupPortableBlock(ctx, "furnace", ctx.portableFurnace);
@@ -373,12 +375,20 @@ async function executeRecipe(
     report({ done: before, total: targetCount, label: `Craft: ${itemName} ${before}/${targetCount}` });
     // One operation at a time: an exception may follow a partial server-side craft.
     // Never retry an ambiguous batch, which could duplicate the requested work.
-    await craftConfirmed(bot, recipe, (table ?? undefined) as never, token);
+    const inputCounts=new Map(recipe.delta.filter(d=>d.count<0).map(d=>[d.id,countItem(bot,bot.registry.items[d.id]?.name ?? "")]));
+    let craftError: unknown;
+    try { await craftConfirmed(bot, recipe, (table ?? undefined) as never, token); }
+    catch(error) { craftError=error; }
+    if (token.cancelled) throw new Error(token.reason ?? "cancelled");
     const deadline = Date.now() + 1500;
     while (countItem(bot, itemName) < before + expected && Date.now() < deadline && !token.cancelled) await sleep(50);
     if (token.cancelled) throw new Error(token.reason ?? "cancelled");
     const after = countItem(bot, itemName);
-    if (after < before + expected) throw new Error(`${itemName}: server did not confirm craft (${after - before}/${expected})`);
+    const consumed=recipe.delta.filter(d=>d.count<0).every(d=>
+      (inputCounts.get(d.id) ?? 0)-countItem(bot,bot.registry.items[d.id]?.name ?? "") >= -d.count);
+    if (after < before + expected || !consumed) {
+      throw new Error(`${itemName}: server did not confirm craft (${after-before}/${expected}; materials consumed=${consumed})${craftError ? `: ${String(craftError)}` : ""}`);
+    }
     ctx.stepsDone++;
   }
 
