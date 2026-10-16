@@ -285,7 +285,8 @@ export class AgentRuntime {
     lines.push(
       `You are "${inst.config.username}", a real Minecraft bot on server "${server?.name ?? "?"}" (${server?.host ?? "?"}), controlled through the CaYa Bot Panel agent system.`
     );
-    if (settings.chat.personality.trim()) lines.push(`PERSONA: ${settings.chat.personality.trim()}`);
+    const personality = botSet?.personality?.trim() || settings.chat.personality.trim();
+    if (personality) lines.push(`PERSONA: ${personality}`);
     const utilityRule = settings.utility.enabled
       ? "- You act ONLY through the provided tools. UTILITY MODE is ON (owner's/permitted server): server commands, creative flight and utility mining tools may be available. Combat always stays realistic (look-before-hit, reach, timing)."
       : "- You act ONLY through the provided tools; everything runs as realistic in-game actions (no cheats, no teleport, no flying).";

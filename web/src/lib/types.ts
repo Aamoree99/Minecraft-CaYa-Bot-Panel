@@ -342,6 +342,7 @@ export interface McpToolPermissions {
 }
 
 export interface McpBotSettings {
+  personality?: string;
   agentEnabled: boolean;
   goal: string;
   autopilot: boolean;
@@ -394,6 +395,7 @@ export interface McpSettings {
 }
 
 export interface McpBotStatus {
+  personality: string;
   botId: string;
   username: string;
   status: string;

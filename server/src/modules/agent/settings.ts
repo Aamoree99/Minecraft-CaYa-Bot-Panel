@@ -21,6 +21,8 @@ export interface McpToolPermissions {
 }
 
 export interface McpBotSettings {
+  /** Per-bot persona; blank inherits the shared chat persona. */
+  personality?: string;
   /** this bot is controllable by the agent system (Ollama + MCP endpoint) */
   agentEnabled: boolean;
   /** free-form long-term goal used by autopilot ticks */
@@ -156,7 +158,7 @@ export function defaultMcpSettings(): McpSettings {
 }
 
 export function defaultMcpBotSettings(): McpBotSettings {
-  return { agentEnabled: false, goal: "", autopilot: false };
+  return { agentEnabled: false, goal: "", autopilot: false, personality: "" };
 }
 
 export function loadMcpSettings(): McpSettings {

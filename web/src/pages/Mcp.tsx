@@ -637,6 +637,8 @@ function BotAgentRow({
   const { t, statusLabel } = useI18n();
   const [goal, setGoal] = useState(bot.goal);
   useEffect(() => setGoal(bot.goal), [bot.goal]);
+  const [persona, setPersona] = useState(bot.personality);
+  useEffect(() => setPersona(bot.personality), [bot.personality]);
   const online = bot.status === "online";
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2">
@@ -648,6 +650,17 @@ function BotAgentRow({
           <span className="rounded-full bg-indigo-600/20 px-1.5 py-0.5 text-[10px] text-indigo-300">{t("mcp.busy")}…</span>
         )}
       </div>
+      <label className="flex w-full items-center gap-2 text-xs text-zinc-400">
+        {t("mcp.personality")}
+        <textarea
+          value={persona}
+          onChange={(e) => setPersona(e.target.value)}
+          onBlur={() => persona !== bot.personality && onPatch({ personality: persona })}
+          maxLength={600}
+          placeholder={t("mcp.personalityPlaceholder")}
+          className="min-w-64 flex-1 rounded-lg border border-zinc-700 bg-zinc-950/70 px-2.5 py-1.5 text-xs text-zinc-200"
+        />
+      </label>
       <Switch checked={bot.agentEnabled} onChange={(v) => onPatch({ agentEnabled: v })} label={t("mcp.agentEnabled")} />
       <Switch checked={bot.autopilot} onChange={(v) => onPatch({ autopilot: v })} label={t("mcp.autopilot")} disabled={!bot.agentEnabled} />
       <div className="flex min-w-64 flex-1 items-center gap-2">
