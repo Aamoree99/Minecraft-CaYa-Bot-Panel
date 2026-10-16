@@ -1,3 +1,4 @@
+import { planSupply } from "./planning";
 import {isFood} from "../survival/foods";
 import fs from "node:fs";
 import path from "node:path";
@@ -165,43 +166,33 @@ export class WorkerService {
                     await this.instance.combat.equipBestWeapon();
                     const before = count(job.item);
                     let result = "";
-                    const stockCache = new Map<string, Record<string,number>>();
-                    const supply = async (item: string, needed: number, depth = 0): Promise<void> => {
+                    const supply = async (item: string, needed: number): Promise<void> => {
                         check();
-                        if (count(item) >= needed)
-                            return;
-                        if (depth > 4)
-                            throw Error(`MISSING_MATERIAL: ${item} (${count(item)}/${needed})`);
-                        const p = /_pickaxe$/.test(item)?undefined:w.containers[category(item) ?? ""];
-                        if (p) {
-                            try {
-                                await withdrawFromChest(this.instance, { ...p, item, count: needed - count(item) }, token, report);
-                                stockCache.delete(category(item)??"");
+                        if(count(item)>=needed)return;
+                        const stock:Record<string,number>={};
+                        for(const [c,p] of Object.entries(w.containers)) {
+                            if(c!=="TOOLS")Object.assign(stock,await readChestStock(this.instance,p,token,report));
+                        }
+                        const inventory:Record<string,number>={};
+                        for(const i of bot.inventory.items())inventory[i.name]=(inventory[i.name]??0)+i.count;
+                        const steps=planSupply(item,needed,inventory,stock,
+                            n=>{const id=bot.registry.itemsByName[n]?.id;return id==null?[]:bot.recipesAll(id,null,true);},
+                            id=>bot.registry.items[id]?.name??"");
+                        for(const step of steps){
+                            check();
+                            if(step.recipe){
+                                const id=bot.registry.itemsByName[step.item].id;
+                                const output=step.recipe.delta.find(d=>d.id===id&&d.count>0)!.count;
+                                await runSmartCraftInline(this.instance,step.item,count(step.item)+step.count*output,token,report,false,step.recipe);
+                                note("SUPPLY_CRAFT",{item:step.item,operations:step.count,delta:step.recipe.delta});
+                            }else{
+                                const p=w.containers[category(step.item)??""];
+                                if(!p)throw Error(`MISSING_CONTAINER: ${step.item}`);
+                                await withdrawFromChest(this.instance,{...p,item:step.item,count:step.count},token,report);
+                                note("SUPPLY_WITHDRAW",{item:step.item,count:step.count});
                             }
-                            catch (e) {
-                                note("SUPPLY_WITHDRAW", { item, error: String(e) });
-                            }
                         }
-                        if (count(item) >= needed)
-                            return;
-                        const def = bot.registry.itemsByName[item];
-                        const recipes = def ? bot.recipesAll(def.id, null, true) : [];
-                        for (const c of new Set(recipes.flatMap(r=>r.delta.filter(d=>d.count<0).map(d=>category(bot.registry.items[d.id]?.name??""))))) {
-                            if(c && c!=="TOOLS" && w.containers[c] && !stockCache.has(c))
-                                stockCache.set(c,await readChestStock(this.instance,w.containers[c],token,report));
-                        }
-                        const available=(name:string)=>count(name)+(stockCache.get(category(name)??"")?.[name]??0);
-                        const recipe = recipes.sort((a,b)=>recipeDeficit(a,id=>bot.registry.items[id]?.name??"",available)-recipeDeficit(b,id=>bot.registry.items[id]?.name??"",available))[0];
-                        if (!recipe)
-                            throw Error(`MISSING_MATERIAL: ${item} (${count(item)}/${needed})`);
-                        const output = recipe.delta.find(d => d.id === def.id && d.count > 0)?.count ?? 1, operations = Math.ceil((needed - count(item)) / output);
-                        for (const ingredient of recipe.delta.filter(d => d.count < 0)) {
-                            const name = bot.registry.items[ingredient.id]?.name;
-                            if (!name)
-                                throw Error("Unknown recipe ingredient");
-                            await supply(name, -ingredient.count * operations, depth + 1);
-                        }
-                        await runSmartCraftInline(this.instance, item, needed, token, report, false);
+                        if(count(item)<needed)throw Error(`SUPPLY_RESULT_MISMATCH: ${item}`);
                     };
                     if (job.mode === "miner") {
                         const tool = bot.inventory.items().find(i => /_pickaxe$/.test(i.name) && usable(i, bot.registry, w.minDurability));

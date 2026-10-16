@@ -94,3 +94,20 @@ test("finite mining travel tolerates observed block approach drift without broad
  assert.equal(inGatherTravelArea(observedFeet,origin,6),true);
  assert.equal(inGatherTravelArea({x:967,y:201,z:956},origin,6),false);
 });
+
+
+test("warehouse raw oak logs plan reserves pickaxe planks while making sticks",async()=>{
+ const {planSupply}=await import("../server/src/modules/worker/planning");
+ const data=require("minecraft-data")("26.3"),Recipe=require("prismarine-recipe")(data).Recipe;
+ const recipes=(n:string)=>Recipe.find(data.itemsByName[n].id,null).filter((r:any)=>r.delta.some((d:any)=>d.count<0));
+ const name=(id:number)=>data.items[id].name;
+ const steps=planSupply("wooden_pickaxe",1,{}, {oak_log:2},recipes,name);
+ const bag:Record<string,number>={},stock:Record<string,number>={oak_log:2};
+ for(const step of steps){
+  if(!step.recipe){assert.ok(stock[step.item]>=step.count);stock[step.item]-=step.count;bag[step.item]=(bag[step.item]??0)+step.count;}
+  else for(const d of step.recipe.delta){const n=name(d.id);bag[n]=(bag[n]??0)+d.count*step.count;assert.ok(bag[n]>=0,`overcommitted ${n}`);}
+ }
+ assert.equal(bag.wooden_pickaxe,1);assert.equal(stock.oak_log,0);assert.equal(bag.oak_planks,3);assert.equal(bag.stick,2);
+ assert.throws(()=>planSupply("wooden_pickaxe",1,{}, {oak_log:1},recipes,name),/MISSING_MATERIAL/);
+ assert.throws(()=>planSupply("diamond_pickaxe",1,{}, {oak_log:2},recipes,name),/MISSING_MATERIAL/);
+});

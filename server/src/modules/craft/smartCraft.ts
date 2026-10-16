@@ -248,7 +248,8 @@ export async function runSmartCraftInline(
   count: number,
   token: TaskToken,
   report: ProgressFn,
-  acquire = true
+  acquire = true,
+  preferredRecipe?: RecipeLike
 ): Promise<void> {
   const bot = requireBot(instance);
   const name = normalize(item);
@@ -265,7 +266,7 @@ export async function runSmartCraftInline(
   };
 
   try {
-    await ensureItem(ctx, name, target, 0);
+    await ensureItem(ctx, name, target, 0, preferredRecipe);
     const finalCount = countItem(bot, name);
     if (finalCount < target) {
       throw new Error(`${name}: target ${target}, inventory ${finalCount}`);
@@ -282,7 +283,8 @@ async function ensureItem(
   ctx: SmartCraftContext,
   itemName: string,
   targetCount: number,
-  depth: number
+  depth: number,
+  preferredRecipe?: RecipeLike
 ): Promise<void> {
   const { bot, instance, token, report } = ctx;
   if (token.cancelled) throw new Error(token.reason ?? "cancelled");
@@ -315,7 +317,7 @@ async function ensureItem(
     }
 
     const itemId = bot.registry.itemsByName[itemName]?.id;
-    const recipe = itemId == null ? null : selectRecipe(bot, itemName, itemId);
+    const recipe = preferredRecipe ?? (itemId == null ? null : selectRecipe(bot, itemName, itemId));
     if (!recipe || itemId == null) {
       report({ done: countItem(bot, itemName), total: targetCount, label: `Collecting: ${itemName}` });
       if (!ctx.acquire) throw new Error(`Missing materials: ${itemName} ${countItem(bot, itemName)}/${targetCount}`);
