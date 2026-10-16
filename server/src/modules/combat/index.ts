@@ -84,6 +84,7 @@ export class CombatService {
   private attackTaskId: string | null = null;
   /** ölüm → respawn arası hareket/koruma dondur (pathfinder kilitlenmesi) */
   private deadPaused = false;
+  private retreatUntil = 0;
   /** threats modu: yakın zamanda botu vuran oyuncular (label → expireMs) */
   private recentThreats = new Map<string, number>();
   /** entity id → tekrar denenebileceği zaman */
@@ -307,6 +308,8 @@ getRuntime(): CombatRuntime {
     this.deathHook = null;
     this.entityGoneHook = null;
     this.bot = null;
+    this.retreatUntil = 0;
+    this.unreachableTargets.clear();
   }
 
   detach() {
@@ -979,6 +982,11 @@ getRuntime(): CombatRuntime {
     if (this.hasActiveCombatTask()) return;
     if (this.mode === "fleeing" || this.mode === "attacking" || this.mode === "defending") return;
 
+    if (Date.now() < this.retreatUntil) {
+      const danger = this.nearestHostile(8, true);
+      if (danger) this.enqueueFlee(labelEntity(danger));
+      return;
+    }
     const range = Math.max(4, Math.min(32, Math.floor(this.cfg().defendRange ?? 12)));
     const target = this.pickSelfGuardTarget(mode, range);
     if (!target) return;
@@ -995,6 +1003,7 @@ getRuntime(): CombatRuntime {
 
     const dist = bot.entity.position.distanceTo(target.position);
     this.log().info(`Self-defense: ${label}`, `mode=${mode} r=${range} d=${dist.toFixed(1)} id=${target.id}`);
+    this.interruptWorkerForThreat(label);
     this.instance.tasks.enqueue(
       {
         type: "defend",
@@ -1140,6 +1149,7 @@ getRuntime(): CombatRuntime {
     const cur = this.instance.tasks.currentSummary;
     if (cur?.type === "defend" || cur?.type === "attack") return;
 
+    this.interruptWorkerForThreat(label);
     this.instance.tasks.enqueue(
       {
         type: "defend",
@@ -1185,7 +1195,20 @@ getRuntime(): CombatRuntime {
     );
   }
 
+  private interruptWorkerForThreat(label: string) {
+    const state = this.instance.worker?.snapshot()?.state;
+    if (state !== "RUNNING" && state !== "QUEUED") return;
+    const reason = `THREAT: ${label}; explicit task reconciliation required`;
+    this.instance.worker.interrupt(reason);
+    this.instance.tasks.cancelAll(reason);
+  }
+
   enqueueFlee(fromLabel?: string) {
+    const existing = [this.instance.tasks.currentSummary, ...this.instance.tasks.queueSummaries]
+      .find(t => t?.type === "flee" && t.state !== "cancelled");
+    if (existing) return existing;
+    // Survival invalidates dependent work: never replay it into the threat.
+    this.instance.tasks.cancelAll("SURVIVAL: retreat; explicit task reconciliation required");
     return this.instance.tasks.enqueue(
       {
         type: "flee",
@@ -1411,10 +1434,10 @@ getRuntime(): CombatRuntime {
 
     let fromPos = bot.entity.position.clone();
     if (fromLabel) {
-      const e = this.findEntityByLabel(fromLabel);
+      const e = this.findEntityByLabel(fromLabel) ?? this.nearestHostile(12, true);
       if (e) fromPos = e.position.clone();
     } else {
-      const near = this.nearestHostile(12) || this.nearestPlayerEntity(12);
+      const near = this.nearestHostile(12, true) || this.nearestPlayerEntity(12);
       if (near) fromPos = near.position.clone();
     }
 
@@ -1422,13 +1445,21 @@ getRuntime(): CombatRuntime {
     await this.fleeFrom(fromPos, 18, token);
     // wait until health recovers a bit or timeout
     const t0 = Date.now();
+    let escapes = 0;
     while (!token.cancelled && Date.now() - t0 < 30_000) {
+      const danger = this.nearestHostile(8, true);
+      if (danger) {
+        if (++escapes > 3) throw new Error("RETREAT_FAILED: hostile still pursuing");
+        await this.fleeFrom(danger.position.clone(), 18, token);
+        continue;
+      }
       if ((bot.health ?? 0) > (this.cfg().fleeAtHealth ?? 6) + 4) break;
       await this.instance.survival.maybeAutoEat();
       report({ done: 0, total: 1, label: `fleeing · can ${bot.health?.toFixed?.(0) ?? "?"}` });
       await sleep(500);
     }
 
+    this.retreatUntil = Date.now() + 15_000;
     report({ done: 1, total: 1, label: (bot.health??0)>(this.cfg().fleeAtHealth??6)+4?"retreated and recovered":"retreated; recovery incomplete at timeout" });
     if (token.cancelled) throw new Error(token.reason ?? "cancelled");
     } catch(error) {
@@ -1515,6 +1546,7 @@ getRuntime(): CombatRuntime {
     if (this.mode === "defending" && this.activeTargetLabel === label) return;
 
     this.log().info(`Defense: ${label} (mode=${mode})`);
+    this.interruptWorkerForThreat(label);
     this.instance.tasks.enqueue(
       {
         type: "defend",
@@ -1841,7 +1873,7 @@ getRuntime(): CombatRuntime {
     return pool[0] ?? null;
   }
 
-  private nearestHostile(radius: number): Entity | null {
+  private nearestHostile(radius: number, includeUnreachable = false): Entity | null {
     const bot = this.bot;
     if (!bot) return null;
     let best: Entity | null = null;
@@ -1849,7 +1881,7 @@ getRuntime(): CombatRuntime {
     for (const id in bot.entities) {
       const e = bot.entities[id];
       if (!e || e === bot.entity || isDeadEntity(e)) continue;
-      if (this.isTargetTemporarilyUnreachable(e)) continue;
+      if (!includeUnreachable && this.isTargetTemporarilyUnreachable(e)) continue;
       if (!isHostileMob(String(e.name ?? e.displayName ?? ""))) continue;
       if (!hasLineOfSight(bot, e)) continue;
       const d = bot.entity.position.distanceTo(e.position);
@@ -2008,6 +2040,7 @@ getRuntime(): CombatRuntime {
     let lastProgressAt = Date.now();
     let routeRetried = false;
     let noPathSince = 0;
+    let approachStartedAt = 0;
 
     const setFollowGoal = (target: Entity) => {
       try {
@@ -2042,7 +2075,7 @@ getRuntime(): CombatRuntime {
 
       bot.on("path_update", onPathUpdate);
       setFollowGoal(tracked);
-      const startedAt = Date.now();
+      const startedAt = approachStartedAt = Date.now();
       const approachEpoch = this.instance.controlEpoch;
 
       while (!isTokenAborted(token) && !this.deadPaused && this.instance.controlEpoch === approachEpoch && Date.now() - startedAt < 15_000) {
@@ -2155,6 +2188,10 @@ getRuntime(): CombatRuntime {
       this.log().debug("Approach failed", error instanceof Error ? error.message : String(error));
       if (tracked?.isValid !== false) this.markTargetUnreachable(tracked, "pathfinder error", 6_000);
     } finally {
+      if (!isTokenAborted(token) && approachStartedAt && Date.now() - approachStartedAt >= 15_000 &&
+          tracked?.isValid !== false && !inMeleeRange(bot, tracked, this.cfg().reach ?? 3)) {
+        this.markTargetUnreachable(tracked, "approach time budget exhausted");
+      }
       try {
         bot.removeListener("path_update", onPathUpdate);
       } catch {

@@ -120,7 +120,7 @@ export class WorkerService {
                 throw Error("DISCONNECTED: explicit reconciliation required"); if (bot.health <= w.criticalHealth) {if(bot.health>0)this.instance.combat.enqueueFlee();throw Error("CRITICAL_HEALTH");} if (nearbyWorkerVisitor(bot))
                 throw Error("OWNERSHIP: another player near work area"); };
             const count = (item: string) => bot.inventory.items().reduce((s, i) => s + (i.name === item ? i.count : 0), 0);
-            const health = () => { if (bot.health <= (w.criticalHealth ?? 8)) {
+            const health = () => { if (!token.cancelled && bot.health <= (w.criticalHealth ?? 8)) {
                 this.instance.tasks.cancelAll("WORKER: critical health; assignment interrupted");
                 if (bot.health > 0)
                     this.instance.combat.enqueueFlee();
