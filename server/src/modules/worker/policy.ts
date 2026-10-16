@@ -54,6 +54,9 @@ export function assertOwned(p: Point): void { assertPosition(p); if (workspace &
     throw Error("OWNERSHIP: mutation outside explicitly assigned own area"); }
 export function guardMovements(m: any): void { if (!workspace)
     return; const w = workspace; m.exclusionAreasStep.push((b: any) => insideWorld(w, b.position) ? 0 : Infinity); m.exclusionAreasBreak.push((b: any) => owned(w, b.position) ? 0 : Infinity); m.exclusionAreasPlace.push((b: any) => owned(w, b.position) ? 0 : Infinity); }
+export function nearbyWorkerVisitor(bot: Pick<Bot,"players"|"username"|"entity">): boolean {
+    return Object.values(bot.players??{}).some(p=>p.username!==bot.username && p.gamemode!==3 && p.entity && p.entity.position.distanceTo(bot.entity.position)<24);
+}
 export function attachWorkspace(instance: BotInstance, bot: Bot): void {
     if (!workspace)
         return;
@@ -65,7 +68,7 @@ export function attachWorkspace(instance: BotInstance, bot: Bot): void {
             return;
         const p = bot.entity.position, v = bot.entity.velocity;
         const job=instance.worker?.snapshot();
-        if(job?.state==="RUNNING" && Object.values(bot.players??{}).some(player=>player.username!==bot.username && player.entity && player.entity.position.distanceTo(p)<24)){
+        if(job?.state==="RUNNING" && nearbyWorkerVisitor(bot)){
             const reason="OWNERSHIP: another player near active work area";
             if(job.interruptionReason!==reason){instance.worker.interrupt(reason);instance.tasks.cancelAll(reason);instance.invalidateControl(reason);}
             return;

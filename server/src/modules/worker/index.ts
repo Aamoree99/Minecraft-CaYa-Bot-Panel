@@ -9,7 +9,7 @@ import { runGoto } from "../movement";
 import { runSmartCollectBlock } from "../gather/smartGather";
 import { runSmartCraftInline } from "../craft/smartCraft";
 import { depositToChest, withdrawFromChest, readChestStock } from "../inventory/chestOps";
-import { workspace, owned, usable, type Point, type Workspace } from "./policy";
+import { nearbyWorkerVisitor, workspace, owned, usable, type Point, type Workspace } from "./policy";
 export type Job = {
     mode: "miner" | "farmer" | "warehouse" | "crafter" | "return";
     item: string;
@@ -117,7 +117,7 @@ export class WorkerService {
             const check = () => { if (token.cancelled)
                 throw Error(token.reason ?? "Cancelled"); if (Date.now() >= end)
                 throw Error("DEADLINE"); if (this.instance.bot !== bot || this.instance.status !== "online")
-                throw Error("DISCONNECTED: explicit reconciliation required"); if (bot.health <= w.criticalHealth) {if(bot.health>0)this.instance.combat.enqueueFlee();throw Error("CRITICAL_HEALTH");} if (Object.values(bot.players).some(p => p.username !== bot.username && p.entity && p.entity.position.distanceTo(bot.entity.position) < 24))
+                throw Error("DISCONNECTED: explicit reconciliation required"); if (bot.health <= w.criticalHealth) {if(bot.health>0)this.instance.combat.enqueueFlee();throw Error("CRITICAL_HEALTH");} if (nearbyWorkerVisitor(bot))
                 throw Error("OWNERSHIP: another player near work area"); };
             const count = (item: string) => bot.inventory.items().reduce((s, i) => s + (i.name === item ? i.count : 0), 0);
             const health = () => { if (bot.health <= (w.criticalHealth ?? 8)) {

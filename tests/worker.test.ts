@@ -111,3 +111,12 @@ test("warehouse raw oak logs plan reserves pickaxe planks while making sticks",a
  assert.throws(()=>planSupply("wooden_pickaxe",1,{}, {oak_log:1},recipes,name),/MISSING_MATERIAL/);
  assert.throws(()=>planSupply("diamond_pickaxe",1,{}, {oak_log:2},recipes,name),/MISSING_MATERIAL/);
 });
+
+
+test("worker allows spectator observation but guards nearby interactive players",async()=>{
+ const {nearbyWorkerVisitor}=await import("../server/src/modules/worker/policy");
+ const {Vec3}=require("vec3");const bot:any={username:"Worker",entity:{position:new Vec3(0,201,0)},players:{owner:{username:"Owner",gamemode:3,entity:{position:new Vec3(1,201,0)}}}};
+ assert.equal(nearbyWorkerVisitor(bot),false);
+ for(const mode of [0,1,2,undefined]){bot.players.owner.gamemode=mode;assert.equal(nearbyWorkerVisitor(bot),true);}
+ bot.players.owner.entity.position=new Vec3(25,201,0);assert.equal(nearbyWorkerVisitor(bot),false);
+});
