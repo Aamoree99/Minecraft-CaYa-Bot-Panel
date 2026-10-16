@@ -1,3 +1,4 @@
+import { WorkerService } from "../modules/worker";
 import { attachWorkspace, assertPosition } from "../modules/worker/policy";
 import { enableAuthMe } from "./authme";
 import { detachUntilEnd } from "./botCleanup";
@@ -65,6 +66,7 @@ export class BotInstance extends EventEmitter {
   readonly craft: CraftService;
   readonly build: BuildService;
   readonly farm: FarmService;
+  readonly worker: WorkerService;
   private foodWatchTimer: NodeJS.Timeout | null = null;
   private nearbyTick = 0;
   private lastNearbyKey = "";
@@ -104,6 +106,7 @@ export class BotInstance extends EventEmitter {
     this.craft = new CraftService(this);
     this.build = new BuildService(this);
     this.farm = new FarmService(this);
+    this.worker = new WorkerService(this);
     this.tasks.on("taskAbort", (_summary, reason) => {
       this.invalidateControl(String(reason ?? "task abort"));
     });
@@ -284,6 +287,7 @@ export class BotInstance extends EventEmitter {
       tasks: { current: this.tasks.currentSummary, queue: this.tasks.queueSummaries },
       inventory: this.lastInventory,
       combat: this.combat.getRuntime(),
+      worker: this.worker.snapshot(),
       build: this.build.getRuntime()
     };
   }
@@ -463,6 +467,7 @@ export class BotInstance extends EventEmitter {
       throw new Error("Hunter modu açık: diğer işlemler kilitli, LLM yalnızca sohbet edebilir");
     }
     switch (type) {
+      case "worker": return this.worker.enqueue(action);
       case "goto": {
         const x = num(action.x, "x");
         const y = num(action.y, "y");

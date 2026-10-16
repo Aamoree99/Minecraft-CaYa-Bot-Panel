@@ -1,4 +1,4 @@
-import { usable, workspace } from "../worker/policy";
+import { insideWorld, usable, workspace } from "../worker/policy";
 import type { Bot } from "mineflayer";
 import type { Entity } from "prismarine-entity";
 import { Vec3 } from "vec3";
@@ -983,7 +983,7 @@ getRuntime(): CombatRuntime {
     const hp = bot.health ?? 20;
     const fleeAt = this.cfg().fleeAtHealth ?? 6;
 
-    if (hp <= fleeAt) {
+    if (hp <= fleeAt || (workspace && target.name === "creeper")) {
       this.log().warn(`Self-defense → flee (health ${hp} ≤ ${fleeAt})`, label);
       this.enqueueFlee(label);
       return;
@@ -1414,6 +1414,7 @@ getRuntime(): CombatRuntime {
       if (near) fromPos = near.position.clone();
     }
 
+    try {
     await this.fleeFrom(fromPos, 18, token);
     // wait until health recovers a bit or timeout
     const t0 = Date.now();
@@ -1423,9 +1424,9 @@ getRuntime(): CombatRuntime {
       await sleep(500);
     }
 
-    this.setMode("idle", null);
     report({ done: 1, total: 1, label: "fleeing tamam" });
     if (token.cancelled) throw new Error(token.reason ?? "cancelled");
+    } finally {this.setMode("idle",null);}
   }
 
   private async runLootDeath(d: DeathRecord, token: TaskToken, report: ProgressFn) {
@@ -2163,19 +2164,28 @@ getRuntime(): CombatRuntime {
 
 private async fleeFrom(from: { x: number; y: number; z: number }, dist: number, token: TaskToken) {
     const bot = this.requireBot();
-    const pos = bot.entity.position;
-    const dx = pos.x - from.x;
-    const dz = pos.z - from.z;
-    const len = Math.sqrt(dx * dx + dz * dz) || 1;
-    const tx = pos.x + (dx / len) * dist;
-    const tz = pos.z + (dz / len) * dist;
-    const ty = pos.y;
-    try {
-      await runGoto(this.instance, tx, ty, tz, 2, token, () => {});
-    } catch (error) {
-      throw new Error(`RETREAT_FAILED: ${error instanceof Error ? error.message : String(error)}`);
+    const pos = bot.entity.position.clone();
+    const initial = Math.hypot(pos.x-from.x,pos.z-from.z);
+    const angle = initial>0.1 ? Math.atan2(pos.z-from.z,pos.x-from.x) : 0;
+    const candidates:Vec3[]=[];
+    if(workspace)candidates.push(new Vec3(workspace.base.x,workspace.base.y,workspace.base.z));
+    for(const distance of [dist,Math.min(dist,12),Math.min(dist,8)])for(const turn of [0,Math.PI/4,-Math.PI/4,Math.PI/2,-Math.PI/2,Math.PI])candidates.push(pos.offset(Math.cos(angle+turn)*distance,0,Math.sin(angle+turn)*distance));
+    const safe=candidates.filter(p=>{
+      if(workspace&&!insideWorld(workspace,p))return false;
+      if(Math.hypot(p.x-from.x,p.z-from.z)<initial+4)return false;
+      const floor=bot.blockAt(p.offset(0,-1,0)),feet=bot.blockAt(p),head=bot.blockAt(p.offset(0,1,0));
+      return floor?.boundingBox==="block"&&!["magma_block","campfire","cactus"].includes(floor.name)&&feet?.name==="air"&&head?.name==="air";
+    }).sort((a,b)=>Math.hypot(b.x-from.x,b.z-from.z)-Math.hypot(a.x-from.x,a.z-from.z));
+    let last="No loaded safe retreat destination";
+    for(const target of safe.slice(0,3)){
+      if(token.cancelled)throw Error(token.reason??"cancelled");
+      try{
+        await runGoto(this.instance,target.x,target.y,target.z,1,token,()=>{},{canDig:false,allowPlace:false,timeoutMs:8000});
+        if(Math.hypot(bot.entity.position.x-from.x,bot.entity.position.z-from.z)>=initial+4)return;
+        last="No verified separation from threat";
+      }catch(error){last=error instanceof Error?error.message:String(error);}
     }
-    if (bot.entity.position.distanceTo(from as never) < Math.hypot(dx,dz)+4) throw new Error("RETREAT_FAILED: no verified separation from threat");
+    throw new Error(`RETREAT_FAILED: ${last}`);
   }
 
   /**

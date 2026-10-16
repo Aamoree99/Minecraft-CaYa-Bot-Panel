@@ -380,6 +380,7 @@ export interface BuildRuntimeSnapshot {
 }
 
 export interface BotSnapshot {
+  worker?: unknown;
   config: BotConfig;
   status: BotStatus;
   runtime: BotRuntimeState;

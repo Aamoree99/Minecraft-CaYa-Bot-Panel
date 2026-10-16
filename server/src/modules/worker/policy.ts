@@ -3,12 +3,13 @@ import type { Bot } from "mineflayer";
 import type { BotInstance } from "../../core/BotInstance";
 export interface Point {x:number;y:number;z:number}
 export interface Box {min:Point;max:Point}
-export interface Workspace {spawn:Point;margin:number;base:Point;owned:Box[];containers:Record<string,Point>;minDurability:number}
+export interface Workspace {spawn:Point;margin:number;base:Point;owned:Box[];containers:Record<string,Point>;minDurability:number;criticalHealth:number;foodThreshold:number}
 export function parseWorkspace(v:any):Workspace {
  const point=(p:any):p is Point=>p&&[p.x,p.y,p.z].every(Number.isFinite);
  if(!v||v.dimension!=="overworld"||!point(v.spawn)||!point(v.base)||!Number.isFinite(v.margin)||v.margin<4||v.margin>64||!Array.isArray(v.owned)||!v.containers)throw Error("Invalid trusted Overworld workspace");
- const w:Workspace={...v,minDurability:v.minDurability??8};
+ const w:Workspace={...v,minDurability:v.minDurability??8,criticalHealth:v.criticalHealth??8,foodThreshold:v.foodThreshold??14};
  if(!Number.isFinite(w.minDurability)||w.minDurability<1)throw Error("Invalid durability threshold");
+ if(!Number.isFinite(w.criticalHealth)||w.criticalHealth<2||w.criticalHealth>18||!Number.isFinite(w.foodThreshold)||w.foodThreshold<1||w.foodThreshold>20)throw Error("Invalid survival thresholds");
  for(const b of w.owned)if(!point(b.min)||!point(b.max)||["x","y","z"].some(k=>(b.min as any)[k]>(b.max as any)[k])||!insideWorld(w,b.min)||!insideWorld(w,b.max))throw Error("Invalid owned workspace box");
  for(const p of [w.base,...Object.values(w.containers)])if(!point(p)||!insideWorld(w,p))throw Error("Workspace point outside authorized bounds");
  return w;
