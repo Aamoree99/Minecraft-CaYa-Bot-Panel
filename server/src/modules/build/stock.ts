@@ -1,3 +1,4 @@
+import { withStorageAccess } from "../inventory/containerAccess";
 import type { Bot } from "mineflayer";
 import type { BotInstance } from "../../core/BotInstance";
 import type { TaskToken } from "../../core/TaskQueue";
@@ -230,7 +231,7 @@ function recordSnapshot(
  * Scan nearby containers: walk to each, open, snapshot, close.
  * Marks stock WITHOUT withdrawing anything.
  */
-export async function scanNearbyStorage(
+async function scanNearbyStorageUnlocked(
   instance: BotInstance,
   index: ChestStockIndex,
   opts: { radius?: number; maxContainers?: number; budgetMs?: number },
@@ -318,7 +319,7 @@ export function inventorySpaceFor(bot: Bot, itemName: string): number {
  * Withdraw up to `count` of any of `itemNames` from indexed containers,
  * walking to each and updating the ledger live.
  */
-export async function fetchFromStorage(
+async function fetchFromStorageUnlocked(
   instance: BotInstance,
   index: ChestStockIndex,
   itemNames: string[],
@@ -400,7 +401,7 @@ export async function fetchFromStorage(
  * Free inventory slots by depositing non-essential items into the nearest
  * indexed container. Protects tools, food, scaffold blocks and `protect` names.
  */
-export async function makeInventoryRoom(
+async function makeInventoryRoomUnlocked(
   instance: BotInstance,
   index: ChestStockIndex,
   protect: Set<string>,
@@ -477,3 +478,13 @@ export async function makeInventoryRoom(
   return bot.inventory.emptySlotCount() >= slotsWanted;
 }
 
+// Reuse existing scanning/stock execution; only serialize its transaction.
+export async function scanNearbyStorage(instance: BotInstance, index: ChestStockIndex, opts: {radius?:number;maxContainers?:number;budgetMs?:number}, token: TaskToken, onActivity: (label:string)=>void = ()=>{}) {
+  return withStorageAccess(instance,token,()=>scanNearbyStorageUnlocked(instance,index,opts,token,onActivity));
+}
+export async function fetchFromStorage(instance: BotInstance, index: ChestStockIndex, names: string[], count:number, token: TaskToken, onActivity: (label:string)=>void = ()=>{}) {
+  return withStorageAccess(instance,token,()=>fetchFromStorageUnlocked(instance,index,names,count,token,onActivity));
+}
+export async function makeInventoryRoom(instance: BotInstance, index: ChestStockIndex, protect:Set<string>, slots:number, token: TaskToken, onActivity: (label:string)=>void = ()=>{}) {
+  return withStorageAccess(instance,token,()=>makeInventoryRoomUnlocked(instance,index,protect,slots,token,onActivity));
+}
