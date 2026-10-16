@@ -8,3 +8,13 @@ test("block placement retains legacy775 layout",()=>{let sent:any;writeBlockPlac
 test("invalid native hit never reaches the wire",()=>{let sent=false;assert.throws(()=>writeBlockPlace({protocolVersion:777,_client:{write:()=>sent=true}},{...hit,cursorY:NaN}),/Invalid block hit/);assert.equal(sent,false);});
 
 test("dig, cancel and release IDs switch at protocol777",()=>{const {getPlayerActionIds}=require("mineflayer/lib/playerActionIds");assert.deepEqual(getPlayerActionIds({protocolVersion:777}),{start:0,abort:2,finish:3,releaseUseItem:6});assert.deepEqual(getPlayerActionIds({protocolVersion:775}),{start:0,abort:1,finish:2,releaseUseItem:5});});
+
+function entityBot(type:string){const {EventEmitter}=require("node:events"),{Vec3}=require("vec3");const bot=new EventEmitter();bot.registry=require("prismarine-registry")("26.3");bot.version="26.3";bot.supportFeature=bot.registry.supportFeature;bot._client=new EventEmitter();require("mineflayer/lib/plugins/entities")(bot);bot.entities[17]={id:17,type,position:new Vec3(0,251,0),velocity:new Vec3(0,0,0)};return bot;}
+test("wire delta applies every step for players and mobs without rescaling twice",()=>{
+ const s=protocol.createSerializer({state:"play",isServer:true,version:"26.3"});const d=protocol.createDeserializer({state:"play",isServer:false,version:"26.3"});
+ const bytes=s.createPacketBuffer({name:"rel_entity_move",params:{entityId:17,delta:{onGround:true,steps:[{ticks:1,x:0.5,y:0,z:0},{ticks:2,x:0,y:0.25,z:1}]}}});
+ const packet=d.parsePacketBuffer(bytes).data;
+ for(const type of ["player","mob"]){const bot=entityBot(type);bot._client.emit(packet.name,packet.params);assert.equal(bot.entities[17].position.x,0.5);assert.equal(bot.entities[17].position.y,251.25);assert.equal(bot.entities[17].position.z,1);}
+});
+test("linear delta and stepped absolute sync retain finite coordinates",()=>{const bot=entityBot("mob");bot._client.emit("rel_entity_move",{entityId:17,delta:{onGround:true,dX:0.5,dY:0,dZ:0,steps:[]}});assert.equal(bot.entities[17].position.x,0.5);bot._client.emit("sync_entity_position",{entityId:17,position:{type:"stepped",path:{steps:[{position:{x:10,y:70,z:10},tickOffset:1},{position:{x:11,y:71,z:12},tickOffset:2}]}},yaw:90,pitch:0,onGround:true});assert.deepEqual([bot.entities[17].position.x,bot.entities[17].position.y,bot.entities[17].position.z],[11,71,12]);assert.equal(bot.entities[17].velocity.x,0);});
+test("invalid entity coordinates are rejected before NaN propagates",()=>{const bot=entityBot("player");assert.throws(()=>bot._client.emit("rel_entity_move",{entityId:17,delta:{x:Infinity,y:0,z:0}}),/Invalid entity movement/);assert.equal(bot.entities[17].position.x,0);});

@@ -1,0 +1,78 @@
+diff --git a/lib/entityMovement.js b/lib/entityMovement.js
+new file mode 100644
+index 0000000..a918bd8
+--- /dev/null
++++ b/lib/entityMovement.js
+@@ -0,0 +1,27 @@
++// Adapted from MF#4144/NMP#1538. Scoped vecDelta is already divided by4096.
++function finite (point) {
++  if (![point.x, point.y, point.z].every(Number.isFinite)) throw new Error('Invalid entity movement coordinates')
++  return point
++}
++function applyEntityDelta (entity, packet, scale) {
++  let steps
++  if (packet.move) steps = packet.move.steps.map(s => ({ x: s.dX / 4096, y: s.dY / 4096, z: s.dZ / 4096 }))
++  else if (packet.delta) {
++    const d = packet.delta
++    steps = d.steps?.length ? d.steps : [{ x: d.x ?? d.dX, y: d.y ?? d.dY, z: d.z ?? d.dZ }]
++  } else steps = [{ x: packet.dX / scale, y: packet.dY / scale, z: packet.dZ / scale }]
++  for (const step of steps) { finite(step); entity.position.translate(step.x, step.y, step.z) }
++  finite(entity.position)
++  if (packet.move || packet.delta) entity.onGround = (packet.move ?? packet.delta).onGround
++}
++function applyEntitySync (entity, packet) {
++  let steps
++  if (packet.position?.type === 'stepped') steps = packet.position.path.steps.map(s => s.position)
++  else if (packet.position?.type === 'linear') steps = [packet.position.path.endPosition]
++  else if (packet.positionType === 'stepped') steps = packet.steps
++  else steps = [packet]
++  for (const step of steps) { finite(step); entity.position.set(step.x, step.y, step.z) }
++  if ([packet.dx, packet.dy, packet.dz].every(Number.isFinite)) entity.velocity.set(packet.dx, packet.dy, packet.dz)
++  if (packet.onGround !== undefined) entity.onGround = packet.onGround
++}
++module.exports = { applyEntityDelta, applyEntitySync }
+diff --git a/lib/plugins/entities.js b/lib/plugins/entities.js
+index d9a070f..20596ec 100755
+--- a/lib/plugins/entities.js
++++ b/lib/plugins/entities.js
+@@ -1,3 +1,4 @@
++const { applyEntityDelta, applyEntitySync } = require('../entityMovement')
+ const { Vec3 } = require('vec3')
+ const conv = require('../conversions')
+ const mojangson = require('mojangson')
+@@ -315,11 +316,7 @@ function inject (bot) {
+   bot._client.on('rel_entity_move', (packet) => {
+     // entity relative move
+     const entity = fetchEntity(packet.entityId)
+-    if (bot.supportFeature('fixedPointDelta')) {
+-      entity.position.translate(packet.dX / 32, packet.dY / 32, packet.dZ / 32)
+-    } else if (bot.supportFeature('fixedPointDelta128')) {
+-      entity.position.translate(packet.dX / (128 * 32), packet.dY / (128 * 32), packet.dZ / (128 * 32))
+-    }
++    applyEntityDelta(entity, packet, bot.supportFeature('fixedPointDelta') ? 32 : 4096)
+     bot.emit('entityMoved', entity)
+   })
+ 
+@@ -334,11 +331,7 @@ function inject (bot) {
+   bot._client.on('entity_move_look', (packet) => {
+     // entity look and relative move
+     const entity = fetchEntity(packet.entityId)
+-    if (bot.supportFeature('fixedPointDelta')) {
+-      entity.position.translate(packet.dX / 32, packet.dY / 32, packet.dZ / 32)
+-    } else if (bot.supportFeature('fixedPointDelta128')) {
+-      entity.position.translate(packet.dX / (128 * 32), packet.dY / (128 * 32), packet.dZ / (128 * 32))
+-    }
++    applyEntityDelta(entity, packet, bot.supportFeature('fixedPointDelta') ? 32 : 4096)
+     entity.yaw = conv.fromNotchianYawByte(packet.yaw)
+     entity.pitch = conv.fromNotchianPitchByte(packet.pitch)
+     bot.emit('entityMoved', entity)
+@@ -361,8 +354,7 @@ function inject (bot) {
+   // 1.21.3 - merges the packets above
+   bot._client.on('sync_entity_position', (packet) => {
+     const entity = fetchEntity(packet.entityId)
+-    entity.position.set(packet.x, packet.y, packet.z)
+-    entity.velocity.set(packet.dx, packet.dy, packet.dz)
++    applyEntitySync(entity, packet)
+     entity.yaw = conv.fromNotchianYaw(packet.yaw)
+     entity.pitch = conv.fromNotchianPitch(packet.pitch)
+     bot.emit('entityMoved', entity)
