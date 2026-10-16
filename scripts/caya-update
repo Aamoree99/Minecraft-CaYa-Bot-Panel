@@ -28,6 +28,7 @@ BACKUP_DIR="$STATE/backups/updates"
 install -d -m 700 -o root -g root "$BACKUP_DIR"
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 BACKUP="$BACKUP_DIR/caya-before-$STAMP.tar.gz"
+BUNDLE="$BACKUP_DIR/caya-source-$STAMP.bundle"
 WAS_ACTIVE=false
 systemctl is-active --quiet "$UNIT" && WAS_ACTIVE=true
 stopped=false
@@ -73,9 +74,11 @@ MEMBERS=("${STATE#/}/data" "${STATE#/}/secrets" 'opt/caya/hooks' 'etc/systemd/sy
 shopt -s nullglob
 for secret in /etc/example-server/caya-bot-*.pass; do MEMBERS+=("${secret#/}"); done
 shopt -u nullglob
+git_caya bundle create - --all > "$BUNDLE"
+git -c safe.directory="$APP" -C "$APP" bundle verify "$BUNDLE" >/dev/null 2>&1
 tar --exclude='*/data/logs' -czf "$BACKUP" -C / "${MEMBERS[@]}"
 tar -tzf "$BACKUP" >/dev/null
-sha256sum "$BACKUP" > "$BACKUP.sha256"
+sha256sum "$BACKUP" "$BUNDLE" > "$BACKUP.sha256"
 printf 'previous=%s\ncandidate=%s\nbranch=%s\n' "$PREVIOUS" "$CANDIDATE" "$BRANCH" > "$BACKUP.revision"
 # Branch remains our maintained local branch; never automatically merge upstream.
 git_caya merge --ff-only "$CANDIDATE"
