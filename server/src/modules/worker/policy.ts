@@ -64,6 +64,12 @@ export function attachWorkspace(instance: BotInstance, bot: Bot): void {
         if (!bot.entity || instance.status !== "online")
             return;
         const p = bot.entity.position, v = bot.entity.velocity;
+        const job=instance.worker?.snapshot();
+        if(job?.state==="RUNNING" && Object.values(bot.players??{}).some(player=>player.username!==bot.username && player.entity && player.entity.position.distanceTo(p)<24)){
+            const reason="OWNERSHIP: another player near active work area";
+            if(job.interruptionReason!==reason){instance.worker.interrupt(reason);instance.tasks.cancelAll(reason);instance.invalidateControl(reason);}
+            return;
+        }
         if(Object.values(bot.entities).some(e=>e.name==="creeper"&&!isDeadEntity(e)&&e.position.distanceTo(p)<4)){
             const reason="CREEPER_PROXIMITY: no safe separation; emergency disconnect";
             instance.worker?.interrupt(reason);instance.tasks.cancelAll(reason);instance.stop();instance.runtime.lastError=reason;return;
