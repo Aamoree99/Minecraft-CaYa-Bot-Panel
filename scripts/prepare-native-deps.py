@@ -30,12 +30,12 @@ def archive(folder,target):
 def main():
  manifest=json.loads(MANIFEST.read_text());OUT.mkdir(exist_ok=True)
  with tempfile.TemporaryDirectory(prefix='caya-native-build-') as temp:
-  for key in ['mineflayer','data']:
+  for key in ['mineflayer','data','chunk']:
    dest=Path(temp)/key;dest.mkdir();raw=source(key,manifest[key])
    with tarfile.open(fileobj=io.BytesIO(raw)) as t:t.extractall(dest,filter='data')
    package=dest/'package'
    for patch in sorted((ROOT/'vendor/native').glob('*.patch')):
-    if key=='mineflayer' and patch.name.startswith('mf-') or key=='data' and patch.name.startswith('data-'):
+    if key=='mineflayer' and patch.name.startswith('mf-') or key=='data' and patch.name.startswith('data-') or key=='chunk' and patch.name.startswith('chunk-'):
      subprocess.run(['git','apply','--check',str(patch)],cwd=package,check=True)
      subprocess.run(['git','apply',str(patch)],cwd=package,check=True)
    if key=='data' and (ROOT/'vendor/native/repair-data.py').exists():
@@ -51,7 +51,7 @@ def main():
    intermediate.replace(OUT/filename)
    for relative in ['package.json','server/package.json']:
     file=ROOT/relative;config=json.loads(file.read_text())
-    dependency='mineflayer' if key=='mineflayer' else 'minecraft-data'
+    dependency={'mineflayer':'mineflayer','data':'minecraft-data','chunk':'prismarine-chunk'}[key]
     config['dependencies'][dependency]='file:'+('../' if relative.startswith('server/') else '')+'.native-deps/'+filename
     file.write_text(json.dumps(config,indent=2)+'\n')
    print(key,manifest[key]['version'],filename)

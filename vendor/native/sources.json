@@ -19,5 +19,11 @@
     "url": "https://registry.npmjs.org/minecraft-data/-/minecraft-data-3.117.0.tgz",
     "integrity": "sha512-glKv0EEmVwKvJwdNAKAal2P7gi/nijU9rEMp8gJmqYYRVswS6hA0q9566lcGHH07Ocmpqw5bMRbARC25pR13gA==",
     "gitHead": "94b717a14e167afdbcdfe708f40f7eed8917fe08"
+  },
+  "chunk": {
+    "package": "@wp2508/prismarine-chunk",
+    "version": "1.41.3",
+    "url": "https://registry.npmjs.org/@wp2508/prismarine-chunk/-/prismarine-chunk-1.41.3.tgz",
+    "integrity": "sha512-w0lkYhbJ6HmtIcODzbqvRlnA1yQm1K55KTaQU7SHstXnMhkq4St9KNAOtIUfH0PcoOuW1DlrGWQBZw8qd98Jkg=="
   }
 }

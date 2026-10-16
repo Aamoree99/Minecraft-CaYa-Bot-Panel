@@ -37,7 +37,8 @@
     "prismarine-nbt": "^2.8.0",
     "prismarine-schematic": "^1.3.0",
     "socket.io": "^4.7.5",
-    "vec3": "^0.1.10"
+    "vec3": "^0.1.10",
+    "prismarine-chunk": "file:.native-deps/chunk-ed0b5a90cafa777825eb.tgz"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",
@@ -93,7 +94,7 @@
     "minecraft-protocol": "npm:@wp2508/minecraft-protocol@1.69.1",
     "protodef": "npm:@wp2508/protodef@1.19.2",
     "prismarine-chat": "npm:@wp2508/prismarine-chat@1.13.2",
-    "prismarine-chunk": "npm:@wp2508/prismarine-chunk@1.41.3",
+    "prismarine-chunk": "$prismarine-chunk",
     "prismarine-physics": "npm:@wp2508/prismarine-physics@1.12.3"
   }
 }
