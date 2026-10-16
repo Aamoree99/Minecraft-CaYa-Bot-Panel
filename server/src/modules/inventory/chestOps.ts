@@ -1,3 +1,4 @@
+import { goals } from "mineflayer-pathfinder";
 import { usable } from "../worker/policy";
 import { withStorageAccess } from "./containerAccess";
 import type { Bot } from "mineflayer";
@@ -113,7 +114,22 @@ function emitChestMemory(instance: BotInstance, pos: Vec3, win: ContainerWindow)
   }
 }
 
-async function openContainerSafe(bot: Bot, block: Block, token: TaskToken): Promise<ContainerWindow> {
+async function openContainerSafe(instance:BotInstance, block: Block, token: TaskToken, report:ProgressFn): Promise<ContainerWindow> {
+  const bot=requireBot(instance);
+  // Distance alone permits a table/neighboring chest to occlude the click.
+  if(typeof bot.canSeeBlock==="function"&&!bot.canSeeBlock(block)){
+    const candidates=[[1,0],[-1,0],[0,1],[0,-1]].map(([x,z])=>block.position.offset(x!,0,z!))
+      .sort((a,b)=>a.distanceTo(bot.entity.position)-b.distanceTo(bot.entity.position));
+    for(const p of candidates){
+      if(token.cancelled)throw Error(token.reason??"cancelled");
+      const feet=bot.blockAt(p),head=bot.blockAt(p.offset(0,1,0)),floor=bot.blockAt(p.offset(0,-1,0));
+      if(!feet||!head||!floor||feet.boundingBox!=="empty"||head.boundingBox!=="empty"||floor.boundingBox==="empty")continue;
+      try{await runGoto(instance,p.x,p.y,p.z,0.5,token,report,{canDig:false,allowPlace:false,timeoutMs:5000,goal:new goals.GoalBlock(p.x,p.y,p.z)});}
+      catch(error){if(token.cancelled)throw error;continue;}
+      if(bot.canSeeBlock(block))break;
+    }
+    if(!bot.canSeeBlock(block))throw Error("Container occluded: no reachable visible side");
+  }
   const win = await boundedOp(bot.openContainer(block as never), token, 8_000, "openContainer");
   return win as unknown as ContainerWindow;
 }
@@ -166,7 +182,7 @@ async function depositToChestUnlocked(
     return result;
   }
 
-  const win = await openContainerSafe(bot, chest, token);
+  const win = await openContainerSafe(instance, chest, token, report);
   let lastError = "";
   try {
     const total = [...plan.values()].reduce((a, b) => a + b, 0);
@@ -264,7 +280,7 @@ async function withdrawFromChestUnlocked(
   if (token.cancelled) throw new Error(token.reason ?? "cancelled");
 
   const before = countByName(bot, item);
-  const win = await openContainerSafe(bot, chest, token);
+  const win = await openContainerSafe(instance, chest, token, report);
   let lastError = "";
   let confirmedGot = 0;
   try {
@@ -322,7 +338,7 @@ async function readChestStockUnlocked(instance: BotInstance, spec: ChestTargetSp
   const bot = requireBot(instance), block = resolveContainerBlock(instance, spec);
   await runGoto(instance, block.position.x, block.position.y, block.position.z, 2, token, report);
   if (token.cancelled) throw Error(token.reason ?? "cancelled");
-  const win = await openContainerSafe(bot, block, token);
+  const win = await openContainerSafe(instance, block, token, report);
   try {
     await confirmWindow(bot, win, token);
     emitChestMemory(instance, block.position, win);

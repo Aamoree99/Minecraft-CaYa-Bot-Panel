@@ -44,7 +44,7 @@ export function parseWorkspace(v: any): Workspace {
             throw Error("Workspace point outside authorized bounds");
     return w;
 }
-export function insideWorld(w: Workspace, p: Point, padding = w.margin): boolean { return [p.x, p.y, p.z].every(Number.isFinite) && p.x >= w.spawn.x - 4000 + padding && p.x <= w.spawn.x + 4000 - padding && p.z >= w.spawn.z - 4000 + padding && p.z <= w.spawn.z + 4000 - padding && p.y >= -64 && p.y <= 319; }
+export function insideWorld(w: Workspace, p: Point, padding = w.margin): boolean { return !!p && [p.x, p.y, p.z].every(Number.isFinite) && p.x >= w.spawn.x - 4000 + padding && p.x <= w.spawn.x + 4000 - padding && p.z >= w.spawn.z - 4000 + padding && p.z <= w.spawn.z + 4000 - padding && p.y >= -64 && p.y <= 319; }
 export function inBox(p: Point, b: Box): boolean { return p.x >= b.min.x && p.x <= b.max.x && p.y >= b.min.y && p.y <= b.max.y && p.z >= b.min.z && p.z <= b.max.z; }
 export function owned(w: Workspace, p: Point): boolean { return insideWorld(w, p) && w.owned.some(b => inBox(p, b)) && !w.protected.some(b=>inBox(p,b)); }
 export function containerAllowed(w: Workspace, p: Point): boolean { return insideWorld(w, p) && Object.values(w.containers).some(c => c.x === p.x && c.y === p.y && c.z === p.z); }
@@ -57,7 +57,7 @@ export function assertPosition(p: Point, dimension = "overworld"): void { if (wo
 export function assertOwned(p: Point): void { assertPosition(p); if (workspace && !owned(workspace, p))
     throw Error("OWNERSHIP: mutation outside explicitly assigned own area"); }
 export function guardMovements(m: any): void { if (!workspace)
-    return; const w = workspace; m.exclusionAreasStep.push((b: any) => insideWorld(w, b.position) ? 0 : Infinity); m.exclusionAreasBreak.push((b: any) => owned(w, b.position) ? 0 : Infinity); m.exclusionAreasPlace.push((b: any) => owned(w, b.position) ? 0 : Infinity); }
+    return; const w = workspace; m.exclusionAreasStep.push((b: any) => insideWorld(w, b?.position) ? 0 : Infinity); m.exclusionAreasBreak.push((b: any) => owned(w, b?.position) ? 0 : Infinity); m.exclusionAreasPlace.push((b: any) => owned(w, b?.position) ? 0 : Infinity); }
 // Trust is scoped to the reviewed workspace; names never confer partner status.
 export function nearbyWorkerVisitor(bot: Pick<Bot,"players"|"username"|"entity">, partnerUuids: readonly string[] = workspace?.partnerUuids ?? []): boolean {
     const roster = new Set(partnerUuids.map(id => id.toLowerCase()));

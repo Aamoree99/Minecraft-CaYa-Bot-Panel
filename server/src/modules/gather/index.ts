@@ -1,3 +1,5 @@
+import { equipUsableTool } from "../worker/equipment";
+import { goals } from "mineflayer-pathfinder";
 import type { Bot } from "mineflayer";
 import type { Block } from "prismarine-block";
 import { Vec3 } from "vec3";
@@ -6,9 +8,12 @@ import { PRIORITY, type ProgressFn, type TaskToken } from "../../core/TaskQueue"
 import { creativeEnsureItem } from "../build/creative";
 import { boundedOp, digCancelable } from "../build/place";
 import { ensureMovement, runGoto, type GotoOptions } from "../movement";
+import { inWorkArea, type Point } from "./targets";
 import { ringSearch } from "./ringSearch";
 // caya-build-resource-storage-v1: gather
 import { collectDropsAfterDig, runSmartCollectBlock, runSmartCollectDrops } from "./smartGather";
+
+const TREE_SOIL = new Set(["grass_block","dirt","coarse_dirt","podzol","rooted_dirt","mud","muddy_mangrove_roots","mangrove_roots","moss_block","mycelium","crimson_nylium","warped_nylium","netherrack"]);
 
 const LOG_BLOCKS = new Set([
   "oak_log",
@@ -136,6 +141,7 @@ export class GatherService {
     const start = countNow();
     const target = countMode === "add" ? start + Math.max(1, amount) : Math.max(1, amount);
     const requestedDelta = Math.max(0, target - start);
+    ensureMovement(this.instance,TREE_MOVE);
     const blockedTrees = new Map<string, number>();
     let noProgressTrees = 0;
 
@@ -156,17 +162,18 @@ export class GatherService {
     }
 
     while (countNow() < target && !token.cancelled) {
-      let base = this.findTreeBase(bot, match, 40, blockedTrees);
+      let base = this.findTreeBase(bot, match, 40, blockedTrees, token.workArea);
       if (!base) {
+        if(token.workArea)throw Error("No rooted reachable tree in assigned work area");
         const found = await ringSearch(this.instance, token, report, {
           step: 24,
           maxRadius: 144,
           surfaceTravel: true,
           movement: { canDig: false, allowPlace: false, parkour: true, timeoutMs: 45_000 },
-          probe: (probeBot) => Boolean(this.findTreeBase(probeBot, match, 28, blockedTrees))
+          probe: (probeBot) => Boolean(this.findTreeBase(probeBot, match, 28, blockedTrees, token.workArea))
         });
         if (!found) throw new Error("No reachable surface tree found (no terrain dig)");
-        base = this.findTreeBase(bot, match, 40, blockedTrees);
+        base = this.findTreeBase(bot, match, 40, blockedTrees, token.workArea);
       }
       if (!base) continue;
 
@@ -306,7 +313,8 @@ export class GatherService {
     bot: Bot,
     match: (name: string) => boolean,
     maxDistance: number,
-    blocked: Map<string, number>
+    blocked: Map<string, number>,
+    area?: { origin: Point; radius: number }
   ): Block | null {
     const positions = bot.findBlocks({
       matching: (block) => match(block.name),
@@ -324,6 +332,7 @@ export class GatherService {
         if (!below || !match(below.name)) break;
         current = below;
       }
+      if(area && !inWorkArea(current.position,area.origin,area.radius))continue;
       const key = posKey(current.position);
       if ((blocked.get(key) ?? 0) >= 2) continue;
       unique.set(key, current);
@@ -332,7 +341,7 @@ export class GatherService {
     const here = bot.entity.position;
     const candidates = [...unique.values()].filter((block) => {
       const below = bot.blockAt(block.position.offset(0, -1, 0));
-      if (!below || below.boundingBox === "empty") return false; // floating/player decoration
+      if (!below || !TREE_SOIL.has(below.name)) return false; // canopy leftovers and placed decorations are not rooted trees
       const exposed = HORIZONTAL.some(([x, z]) => {
         const side = bot.blockAt(block.position.offset(x, 0, z));
         return !side || side.boundingBox === "empty" || side.name.includes("leaves") || side.name === "vine";
@@ -341,6 +350,18 @@ export class GatherService {
     });
 
     candidates.sort((a, b) => treeScore(here, a) - treeScore(here, b));
+    const pf=(bot as any).pathfinder;
+    if(pf?.getPathTo&&pf.movements){
+      const reachable:Array<{block:Block;cost:number}>=[];
+      for(const block of candidates.slice(0,12)){
+        try{
+          const p=block.position,path=pf.getPathTo(pf.movements,new goals.GoalLookAtBlock(p,bot.world,{reach:4.5}),75);
+          if(path.status==="success")reachable.push({block,cost:path.cost??path.path.length});
+        }catch{}
+      }
+      reachable.sort((a,b)=>a.cost-b.cost);
+      return reachable[0]?.block??null;
+    }
     return candidates[0] ?? null;
   }
 
@@ -361,11 +382,10 @@ export class GatherService {
       2,
       token,
       () => {},
-      TREE_MOVE
+      {...TREE_MOVE,goal:new goals.GoalLookAtBlock(base.position,bot.world,{reach:4.5})}
     );
 
-    report("clearing leaves around trunk");
-    await this.clearFoliageWorkspace(bot, base.position, token);
+    // digTreeBlock clears only actual line-of-sight obstacles; do not strip the canopy first.
 
     const positions = bot.findBlocks({
       matching: (block) => match(block.name),
@@ -392,6 +412,7 @@ export class GatherService {
       } catch (error) {
         misses += 1;
         const msg = error instanceof Error ? error.message : String(error);
+        if(!msg.includes("too high"))this.log().warn("Tree block could not be harvested", `${live.name}@${posKey(live.position)}: ${msg}`);
         // Tepedeki log yerden yetişmiyorsa aynı ağacın daha yükseklerine takılma.
         if (msg.includes("too high") || misses >= 5) break;
       }
@@ -476,7 +497,7 @@ export class GatherService {
       const eyeDist = eyeDistance(bot, center);
       const above = live.position.y > feetY + 2;
 
-      if (!approached && (horiz > 2.2 || (above && horiz > 1.55))) {
+      if (!approached && eyeDist > 5.15) {
         await this.approachTrunkColumn(bot, pos, token);
         approached = true;
         continue;
@@ -539,6 +560,7 @@ export class GatherService {
     if (horiz <= range + 0.35 && Math.abs(bot.entity.position.y - standY) < 1.8) return;
     await runGoto(this.instance, log.x, standY, log.z, range, token, () => {}, {
       ...TREE_MOVE,
+      ...(log.y<=feetY+2?{goal:new goals.GoalLookAtBlock(log,bot.world,{reach:4.5})}:{}),
       timeoutMs: 10_000
     });
     this.stopPath(bot);
@@ -705,15 +727,7 @@ export class GatherService {
   }
 
   private async equipFor(bot: Bot, block: Block) {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const toolPlugin = require("mineflayer-tool").plugin;
-      if (!(bot as unknown as { tool?: unknown }).tool) bot.loadPlugin(toolPlugin);
-      const toolBot = bot as unknown as { tool?: { equipForBlock(block: unknown): Promise<void> } };
-      if (toolBot.tool) await boundedOp(toolBot.tool.equipForBlock(block), null, 3_000, "equip tool");
-    } catch {
-      /* no tool plugin */
-    }
+    await boundedOp(equipUsableTool(bot,block,this.instance.config.inventory.bannedItems),null,3000,"equip usable tree tool");
     if (bot.heldItem && this.instance.config.inventory.bannedItems.includes(bot.heldItem.name)) {
       throw new Error(`Held tool is banned: ${bot.heldItem.name}`);
     }
@@ -769,7 +783,7 @@ const TREE_MOVE: GotoOptions = {
   canDig: false,
   allowPlace: false,
   parkour: true,
-  timeoutMs: 45_000,
+  timeoutMs: 12_000,
   breakOnly: isTreeObstacle
 };
 

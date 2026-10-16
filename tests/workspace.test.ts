@@ -11,3 +11,9 @@ test("durability reserve excludes worn/broken/non-finite damage", () => { const 
     assert.equal(usable({ type: 1, durabilityUsed: used }, r), false); assert.ok(usable({ type: 1, durabilityUsed: 92 }, r)); assert.ok(usable({ type: 2 }, r)); });
 
 test("owned workspaces cannot mutate explicitly protected containment",()=>{const w=parseWorkspace({...cfg,protected:[{min:{x:958,y:199,z:958},max:{x:960,y:202,z:960}}]});assert.equal(owned(w,{x:959,y:201,z:959}),false);assert.equal(owned(w,{x:970,y:201,z:970}),true);});
+
+test("unloaded pathfinder blocks fail closed instead of crashing the navigation loop",async()=>{
+ const {insideWorld,parseWorkspace}=await import("../server/src/modules/worker/policy");
+ const w=parseWorkspace({dimension:"overworld",spawn:{x:0,y:70,z:0},base:{x:0,y:70,z:0},margin:16,owned:[],containers:{}});
+ for(const p of [undefined,null,{}, {x:0,y:NaN,z:0}])assert.equal(insideWorld(w,p as any),false);
+});

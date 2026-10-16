@@ -11,6 +11,8 @@ import { runSmartCraftInline } from "../craft/smartCraft";
 import { depositToChest, withdrawFromChest, readChestStock } from "../inventory/chestOps";
 import { nearbyWorkerVisitor, workspace, owned, usable, type Point, type Workspace } from "./policy";
 export type Job = {
+    tool?: string;
+    deliver: boolean;
     mode: "miner" | "farmer" | "warehouse" | "crafter" | "return";
     item: string;
     count: number;
@@ -25,7 +27,9 @@ export function parseJob(a: any, w: Workspace): Job {
     const mode = a.mode;
     if (!["miner", "farmer", "warehouse", "crafter", "return"].includes(mode))
         throw Error("Unknown worker mode");
-    const j: Job = { mode, item: String(a.item ?? "cobblestone").replace(/^minecraft:/, ""), count: a.count ?? 64, origin: a.origin ?? w.base, radius: a.radius ?? 4, deadlineMs: a.deadlineMs ?? 120000, attempts: a.attempts ?? 1, cycles: a.cycles ?? 1, intervalMs: a.intervalMs ?? 30000 };
+    const j: Job = { mode, tool: a.tool, deliver: a.deliver === true, item: String(a.item ?? "cobblestone").replace(/^minecraft:/, ""), count: a.count ?? 64, origin: a.origin ?? w.base, radius: a.radius ?? 4, deadlineMs: a.deadlineMs ?? 120000, attempts: a.attempts ?? 1, cycles: a.cycles ?? 1, intervalMs: a.intervalMs ?? 30000 };
+    if (a.tool !== undefined && (typeof a.tool !== "string" || !/^(wooden|stone|iron|diamond|netherite)_(pickaxe|axe|shovel|hoe)$/.test(a.tool))) throw Error("Invalid requested tool");
+    if (a.deliver !== undefined && typeof a.deliver !== "boolean") throw Error("Invalid delivery flag");
     for (const [k, min, max] of [["count", 1, 4096], ["radius", 1, 16], ["deadlineMs", 1000, 7200000], ["attempts", 1, 3], ["cycles", 1, 720], ["intervalMs", 5000, 300000]] as const)
         if (!Number.isInteger(j[k]) || j[k] < min || j[k] > max)
             throw Error(`Invalid worker ${k}`);
@@ -120,6 +124,8 @@ export class WorkerService {
                 throw Error("DISCONNECTED: explicit reconciliation required"); if (bot.health <= w.criticalHealth) {if(bot.health>0)this.instance.combat.enqueueFlee();throw Error("CRITICAL_HEALTH");} if (nearbyWorkerVisitor(bot))
                 throw Error("OWNERSHIP: another player near work area"); };
             const count = (item: string) => bot.inventory.items().reduce((s, i) => s + (i.name === item ? i.count : 0), 0);
+            if(job.tool && this.instance.config.inventory.bannedItems.includes(job.tool))throw Error(`BANNED_TOOL: ${job.tool}`);
+            const initialTarget = count(job.item);
             const health = () => { if (!token.cancelled && bot.health <= (w.criticalHealth ?? 8)) {
                 this.instance.tasks.cancelAll("WORKER: critical health; assignment interrupted");
                 if (bot.health > 0)
@@ -137,8 +143,9 @@ export class WorkerService {
                     continue;
                 const keepCounts: Record<string, number> = { bread: 4, wheat_seeds: 8, carrot: 4, potato: 4, beetroot_seeds: 8 };
                 for (const i of bot.inventory.items())
-                    if (/_pickaxe$|_sword$/.test(i.name) && usable(i, bot.registry, w.minDurability))
+                    if ((/_pickaxe$|_sword$/.test(i.name) || i.name===job.tool) && usable(i, bot.registry, w.minDurability))
                         keepCounts[i.name] = 1;
+                if(job.mode==="crafter"&&job.deliver&&category(job.item)===name)keepCounts[job.item]=initialTarget;
                 const r = await depositToChest(this.instance, { ...p, items: [...new Set(items)], keepCounts }, token, report);
                 record.deposited += r.movedTotal;
                 note("DEPOSIT", { container: name, moved: r.moved, left: r.left });
@@ -170,6 +177,7 @@ export class WorkerService {
                         check();
                         const available = (name:string) => bot.inventory.items().filter(i=>i.name===name&&usable(i,bot.registry,w.minDurability)).reduce((n,i)=>n+i.count,0);
                         if(available(item)>=needed)return;
+                        for(let planningAttempt=0;planningAttempt<2;planningAttempt++){
                         const stock:Record<string,number>={};
                         const sources = new Map<string, Array<{position: typeof w.base; count:number}>>();
                         const visited = new Set<string>();
@@ -185,9 +193,21 @@ export class WorkerService {
                         }
                         const inventory:Record<string,number>={};
                         for(const i of bot.inventory.items().filter(i=>usable(i,bot.registry,w.minDurability)))inventory[i.name]=(inventory[i.name]??0)+i.count;
-                        const steps=planSupply(item,needed,inventory,stock,
+                        let steps;
+                        try { steps=planSupply(item,needed,inventory,stock,
                             n=>{const id=bot.registry.itemsByName[n]?.id;return id==null?[]:bot.recipesAll(id,null,true);},
-                            id=>bot.registry.items[id]?.name??"");
+                            id=>bot.registry.items[id]?.name??""); }
+                        catch(error){
+                            if(planningAttempt!==0 || !/^wooden_(pickaxe|axe|shovel|hoe)$/.test(item) || !String(error).includes("MISSING_MATERIAL"))throw error;
+                            const previousArea=token.workArea;
+                            note("SUPPLY_GATHER_REQUESTED",{item:"log",target:2,origin:w.base,radius:16});
+                            token.workArea={origin:w.base,radius:16};
+                            try{await runSmartCollectBlock(this.instance,"log",2,token,report,"target");}
+                            finally{token.workArea=previousArea;}
+                            note("SUPPLY_GATHER_DONE",{logs:bot.inventory.items().filter(i=>/_log$|_stem$/.test(i.name)).reduce((n,i)=>n+i.count,0)});
+                            await returnBase();
+                            continue;
+                        }
                         for(const step of steps){
                             check();
                             if(step.recipe){
@@ -210,17 +230,20 @@ export class WorkerService {
                             }
                         }
                         if(available(item)<needed)throw Error(`SUPPLY_RESULT_MISMATCH: ${item}`);
+                        return;
+                        }
                     };
                     if (job.mode === "miner") {
                         // Logs are harvestable by hand: bootstrap wood must not depend on a pickaxe.
-                        if (!/^(.+_log|.+_stem|log)$/.test(job.item)) {
-                        const tool = bot.inventory.items().find(i => /_pickaxe$/.test(i.name) && usable(i, bot.registry, w.minDurability));
+                        if (job.tool || !/^(.+_log|.+_stem|log)$/.test(job.item)) {
+                        const acceptsTool = (name:string) => job.tool ? name===job.tool : /_pickaxe$/.test(name);
+                        const tool = bot.inventory.items().find(i => acceptsTool(i.name) && usable(i, bot.registry, w.minDurability));
                         if (!tool) {
                             const p = w.containers.TOOLS;
                             if (p) {
                                 try {
                                     const stock=await readChestStock(this.instance,{...p,minDurability:w.minDurability},token,report);
-                                    const pick=Object.keys(stock).find(name=>/_pickaxe$/.test(name)&&stock[name]>0);
+                                    const pick=Object.keys(stock).find(name=>acceptsTool(name)&&stock[name]>0);
                                     if(pick)await withdrawFromChest(this.instance, { ...p, item: pick, count: 1, minDurability:w.minDurability }, token, report);
                                 }
                                 catch (e) {
@@ -228,12 +251,14 @@ export class WorkerService {
                                 }
                             }
                         }
-                        if (!bot.inventory.items().some(i => /_pickaxe$/.test(i.name) && usable(i, bot.registry, w.minDurability))) {
-                            await supply("wooden_pickaxe", bot.inventory.items().filter(i=>i.name==="wooden_pickaxe"&&usable(i,bot.registry,w.minDurability)).reduce((n,i)=>n+i.count,0) + 1);
+                        if (!bot.inventory.items().some(i => acceptsTool(i.name) && usable(i, bot.registry, w.minDurability))) {
+                            await supply(job.tool??"wooden_pickaxe", bot.inventory.items().filter(i=>i.name===(job.tool??"wooden_pickaxe")&&usable(i,bot.registry,w.minDurability)).reduce((n,i)=>n+i.count,0) + 1);
                         }
+                        if(!/^(.+_log|.+_stem|log)$/.test(job.item)){
                         const capacity=bot.inventory.items().filter(i=>/_pickaxe$/.test(i.name)&&usable(i,bot.registry,w.minDurability)).reduce((n,i)=>n+Math.max(0,(bot.registry.items[i.type]?.maxDurability??0)-(i.durabilityUsed??0)-w.minDurability+1),0);
                         const missingCapacity=Math.max(0,job.count-count(job.item)-capacity);
                         if(missingCapacity){const max=bot.registry.itemsByName.wooden_pickaxe?.maxDurability??59;const spares=Math.ceil(missingCapacity/Math.max(1,max-w.minDurability+1));if(spares>8)throw Error("TOOL_CAPACITY: assignment needs more than8 spare tools; split into smaller jobs");await supply("wooden_pickaxe",bot.inventory.items().filter(i=>i.name==="wooden_pickaxe"&&usable(i,bot.registry,w.minDurability)).reduce((n,i)=>n+i.count,0)+spares);}
+                        }
                         }
                         await runGoto(this.instance,job.origin.x,job.origin.y,job.origin.z,2,token,report,{canDig:false,allowPlace:false,timeoutMs:30000});
                         token.workArea = { origin: job.origin, radius: job.radius };
