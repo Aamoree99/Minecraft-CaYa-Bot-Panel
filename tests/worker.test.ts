@@ -20,3 +20,5 @@ test("cancelled queued worker persists interruption and permits explicit resubmi
  `],{cwd:process.cwd(),env:{...process.env,CAYA_DATA_DIR:dir,CAYA_WORKSPACE_FILE:config},encoding:"utf8",timeout:10000});assert.equal(result.status,0,result.stderr+result.stdout);
  }finally{fs.rmSync(dir,{recursive:true,force:true});}
 });
+
+test("mining replaces faster exhausted tool with slower usable harvest tool",async()=>{const {equipUsableTool}=await import("../server/src/modules/worker/equipment");const worn={type:1,name:"iron_pickaxe",slot:9,durabilityUsed:249},spare={type:2,name:"wooden_pickaxe",slot:10,durabilityUsed:2};let selected:any;const bot:any={heldItem:worn,registry:{items:{1:{maxDurability:250},2:{maxDurability:59}}},inventory:{items:()=>[worn,spare]},tool:{getDigTime:(_:any,i:any)=>i?.type===1?10:i?.type===2?30:100},equip:async(i:any)=>{selected=i;}};await equipUsableTool(bot,{name:"stone",canHarvest:(type:any)=>type===1||type===2});assert.equal(selected,spare);});

@@ -1,3 +1,4 @@
+import { equipUsableTool } from "../worker/equipment";
 import type { Bot } from "mineflayer";
 import type { BotInstance } from "../../core/BotInstance";
 import { abortToken, type ProgressFn, type TaskToken } from "../../core/TaskQueue";
@@ -449,18 +450,7 @@ async function runDirectWorldGather(
     }
 
     try {
-      const toolBot = bot as unknown as {
-        tool?: { equipForBlock(block: unknown): Promise<void> };
-        loadPlugin(plugin: unknown): void;
-      };
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const toolPlugin = require("mineflayer-tool").plugin;
-        if (!toolBot.tool) toolBot.loadPlugin(toolPlugin);
-        await toolBot.tool?.equipForBlock(live);
-      } catch {
-        // optional plugin
-      }
+      await equipUsableTool(bot,live);
       if (!live.canHarvest(bot.heldItem?.type ?? null)) throw new Error(`Tool cannot harvest ${live.name}`);
       const wait = typeof bot.digTime === "function" ? bot.digTime(live) : 1_000;
       const ms = Math.max(3_000, Math.min(12_000, (Number.isFinite(wait) ? wait : 1_000) + 3_500));

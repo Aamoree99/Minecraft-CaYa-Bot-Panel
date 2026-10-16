@@ -76,7 +76,7 @@ export function attachWorkspace(instance: BotInstance, bot: Bot): void {
     const dimension = () => { if (instance.runtime.dimension !== "overworld")
         throw Error("BOUNDARY: Overworld only"); };
     const dig = bot.dig;
-    bot.dig = (async (block: any, forceLook: any = true, direction: any = "auto") => { dimension(); assertOwned(block.position); return dig.call(bot, block, forceLook, direction); }) as Bot["dig"];
+    bot.dig = (async (block: any, forceLook: any = true, direction: any = "auto") => { dimension(); assertOwned(block.position); if(bot.heldItem&&!usable(bot.heldItem,bot.registry,w.minDurability))throw Error("EQUIPMENT: worn tool cannot dig"); return dig.call(bot, block, forceLook, direction); }) as Bot["dig"];
     const place = bot.placeBlock;
     bot.placeBlock = (async function (this: Bot, block, face, ...args) { dimension(); assertOwned(block.position.plus(face)); if (this.heldItem && /bucket$/.test(this.heldItem.name))
         throw Error("SAFETY: worker liquid placement is disabled"); return place.call(this, block, face, ...args); }) as Bot["placeBlock"];

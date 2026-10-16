@@ -81,7 +81,8 @@ export class WorkerService {
             this.save();
         } this.instance.tasks.removeListener("queueCleared", cleared);this.instance.tasks.removeListener("update",updated); };
         this.instance.tasks.on("queueCleared", cleared);this.instance.tasks.on("update",updated);
-        const queued=this.instance.tasks.enqueue({ type: "worker", label: `worker ${job.mode}: ${job.item} x${job.count}`, priority: PRIORITY.AUTO, params: { ...job }, timeoutMs: job.deadlineMs + 1000, noProgressMs: Math.max(120000, job.intervalMs + 30000), requeueOnPreempt: false }, () => async (token, report) => {
+        const queued=this.instance.tasks.enqueue({ type: "worker", label: `worker ${job.mode}: ${job.item} x${job.count}`, priority: PRIORITY.AUTO, params: { ...job }, timeoutMs: job.deadlineMs + 1000, noProgressMs: Math.max(120000, job.intervalMs + 30000), requeueOnPreempt: false }, () => async (token, queueReport) => {
+            const report:ProgressFn=p=>queueReport({done:record.cycles,total:job.cycles,label:p.label});
             this.instance.tasks.removeListener("queueCleared", cleared);this.instance.tasks.removeListener("update",updated);
             const bot = this.instance.bot;
             if (!bot) {

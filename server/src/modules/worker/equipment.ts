@@ -14,3 +14,14 @@ export async function equipUsableArmor(bot: Bot): Promise<void> {
             await bot.equip(item, dest);
     }
 }
+
+/** Reuse tool plugin dig-time scoring, but never offer an exhausted tool. */
+export async function equipUsableTool(bot:Bot,block:any):Promise<void>{
+ const b=bot as any;if(!b.tool)bot.loadPlugin(require("mineflayer-tool").plugin);
+ const candidates=bot.inventory.items().filter(i=>usable(i,bot.registry,workspace?.minDurability??8)&&block.canHarvest(i.type));
+ const empty=block.canHarvest(null);const best=candidates.sort((a,b)=>bToolTime(a)-bToolTime(b))[0];
+ function bToolTime(item:any){return b.tool.getDigTime(block,item);}
+ if(!best){if(!empty)throw Error(`MISSING_TOOL: cannot harvest ${block.name}`);if(bot.heldItem)await bot.unequip("hand");return;}
+ if(empty&&bToolTime(undefined)<=bToolTime(best)){if(bot.heldItem)await bot.unequip("hand");return;}
+ if(bot.heldItem?.slot!==best.slot)await bot.equip(best,"hand");
+}
