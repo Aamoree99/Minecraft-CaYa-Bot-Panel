@@ -40,3 +40,27 @@ test("recipe selection accounts for assigned stock rather than arbitrary wood va
  assert.equal(recipes[0].kind,"oak");
  assert.equal(recipeDeficit(recipes[1],id=>names[id],n=>stock[n]??0),3);
 });
+
+
+test("worker deadline includes time blocked in queue",async()=>{
+ const fs=await import("node:fs"),os=await import("node:os"),path=await import("node:path"),cp=await import("node:child_process");
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),"caya-worker-deadline-"));
+ try{
+  const config=path.join(dir,"workspace.json");fs.writeFileSync(config,JSON.stringify({...w,dimension:"overworld"}));
+  const result=cp.spawnSync(process.execPath,["--import","tsx","-e",`
+   (async()=>{const assert=require('node:assert/strict'),{TaskQueue}=require('./server/src/core/TaskQueue.ts'),{WorkerService}=require('./server/src/modules/worker/index.ts');
+   const tasks=new TaskQueue();tasks.enqueue({type:'blocker',label:'blocker',priority:50,params:{},requeueOnPreempt:false},()=>token=>new Promise(resolve=>token.abort.signal.addEventListener('abort',resolve)));tasks.pause();
+   const worker=new WorkerService({config:{id:'deadline',combat:{defendMode:'mob'}},tasks});worker.enqueue({mode:'return',deadlineMs:1000});
+   await new Promise(r=>setTimeout(r,1150));assert.equal(worker.snapshot().state,'INTERRUPTED');assert.match(worker.snapshot().reason,/DEADLINE/);assert.equal(tasks.queueSummaries.length,0);tasks.cancelAll('cleanup');
+   })().catch(e=>{console.error(e);process.exitCode=1});
+  `],{cwd:process.cwd(),env:{...process.env,CAYA_DATA_DIR:dir,CAYA_WORKSPACE_FILE:config},encoding:"utf8",timeout:10000});
+  assert.equal(result.status,0,result.stderr+result.stdout);
+ }finally{fs.rmSync(dir,{recursive:true,force:true});}
+});
+
+
+test("worker forwards real child progress across child counter resets",async()=>{
+ const {workerProgress}=await import("../server/src/modules/worker");const updates:any[]=[];const report=workerProgress(p=>updates.push(p));
+ for(const done of [0,1,0,1,2,2,3])report({done,total:64,label:"mining"});
+ assert.deepEqual(updates.map(p=>p.done),[0,1,1,2,3,3,4]);
+});

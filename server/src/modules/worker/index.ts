@@ -45,6 +45,13 @@ export function category(name: string): string | undefined { if (name === "stick
 export function recipeDeficit(recipe: {delta: Array<{id:number,count:number}>}, name: (id:number)=>string, available:(item:string)=>number):number {
     return recipe.delta.filter(d=>d.count<0).reduce((sum,d)=>sum+Math.max(0,-d.count-available(name(d.id))),0);
 }
+export function workerProgress(report:ProgressFn):ProgressFn {
+    let previous=0, units=0;
+    return p=>{
+        if(Number.isFinite(p.done)&&p.done>=0){units+=Math.max(0,p.done-previous);previous=p.done;}
+        report({done:units,total:Math.max(units,units+Math.max(0,p.total-p.done)),label:p.label});
+    };
+}
 export class WorkerService {
     private ledger: any;
     private file: string;
@@ -74,12 +81,13 @@ export class WorkerService {
             throw Error("A worker assignment is already active");
         if (this.instance.config.combat.defendMode !== "mob")
             throw Error("Worker requires mob-only self-defense");
-        const job = parseJob(a, workspace), record = { job, state: "QUEUED", startedAt: 0, finishedAt: 0, cycles: 0, produced: 0, deposited: 0, reason: "", interruptionReason:"", events: [] as any[] };
+        const job = parseJob(a, workspace), submittedAt=Date.now(), expiresAt=submittedAt+job.deadlineMs, record = { job, submittedAt, expiresAt, state: "QUEUED", startedAt: 0, finishedAt: 0, cycles: 0, produced: 0, deposited: 0, reason: "", interruptionReason:"", events: [] as any[] };
         this.ledger = record;
         this.save();
         let taskId:string|undefined;
+        let queuedDeadline: ReturnType<typeof setTimeout>|undefined;
         const updated=()=>{if(taskId&&record.state==="QUEUED"&&this.instance.tasks.currentSummary?.id!==taskId&&!this.instance.tasks.queueSummaries.some(t=>t.id===taskId))cleared("Queued assignment removed");};
-        const cleared = (reason: string) => { if (record.state === "QUEUED") {
+        const cleared = (reason: string) => { if(queuedDeadline)clearTimeout(queuedDeadline); if (record.state === "QUEUED") {
             record.state = "INTERRUPTED";
             record.reason = record.interruptionReason||reason;
             record.finishedAt = Date.now();
@@ -87,8 +95,9 @@ export class WorkerService {
         } this.instance.tasks.removeListener("queueCleared", cleared);this.instance.tasks.removeListener("update",updated); };
         this.instance.tasks.on("queueCleared", cleared);this.instance.tasks.on("update",updated);
         const queued=this.instance.tasks.enqueue({ type: "worker", label: `worker ${job.mode}: ${job.item} x${job.count}`, priority: PRIORITY.AUTO, params: { ...job }, timeoutMs: job.deadlineMs + 1000, noProgressMs: Math.max(120000, job.intervalMs + 30000), requeueOnPreempt: false }, () => async (token, queueReport) => {
-            const report:ProgressFn=p=>queueReport({done:record.cycles,total:job.cycles,label:p.label});
+            const report=workerProgress(queueReport);
             this.instance.tasks.removeListener("queueCleared", cleared);this.instance.tasks.removeListener("update",updated);
+            if(queuedDeadline)clearTimeout(queuedDeadline);
             const bot = this.instance.bot;
             if (!bot) {
                 record.state = "FAILED";
@@ -100,7 +109,7 @@ export class WorkerService {
             record.state = "RUNNING";
             record.startedAt = Date.now();
             this.save();
-            const end = record.startedAt + job.deadlineMs;
+            const end = expiresAt;
             let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
             const note = (phase: string, detail: any = {}) => { record.events.push({ at: Date.now(), phase, ...detail }); if (record.events.length > 200)
                 record.events.shift(); this.save(); };
@@ -137,7 +146,7 @@ export class WorkerService {
             } };
             bot.on("health", health);
             try {
-                deadlineTimer = setTimeout(() => { this.instance.tasks.cancelAll("WORKER: deadline exceeded"); }, job.deadlineMs);
+                deadlineTimer = setTimeout(() => { this.instance.tasks.cancelAll("WORKER: deadline exceeded"); }, Math.max(0,end-Date.now()));
                 for (let cycle = 0; cycle < job.cycles; cycle++) {
                     check();
                     note("CHECK", { cycle, health: bot.health, food: bot.food });
@@ -290,6 +299,7 @@ export class WorkerService {
             }
         });
         taskId=queued.id;
+        if(record.state==="QUEUED")queuedDeadline=setTimeout(()=>{record.interruptionReason="DEADLINE: assignment expired in queue";this.instance.tasks.cancel(queued.id,record.interruptionReason);cleared(record.interruptionReason);},Math.max(0,expiresAt-Date.now()));
         return queued;
     }
 }
