@@ -21,9 +21,9 @@ def git(*args):
 def commit(message):
  git("add",".");git("-c","user.name=Updater integration","-c","user.email=integration@localhost","commit","-m",message)
  return git("rev-parse","HEAD")
-def health():
+def health(version="26.3"):
  with urllib.request.urlopen("http://127.0.0.1:3003/api/state",timeout=5) as r:
-  data=json.load(r);assert data["bots"]==[];assert "26.3" in data["supportedVersions"]
+  data=json.load(r);assert data["bots"]==[];assert version in data["supportedVersions"]
 def digest():
  files=[state/"data/bots.json",state/"data/servers.json",state/"data/mcp.json",state/"data/preservation.json",state/"secrets/Synthetic.pass",hooks/"synthetic.cjs",protected/"caya-bot-Synthetic.pass",unitfile]
  return {str(p):(hashlib.sha256(p.read_bytes()).hexdigest(),p.stat().st_mode & 0o777,p.stat().st_uid) for p in files}
@@ -86,6 +86,25 @@ try:
   assert "Rollback build failed" not in text and "Rollback service health failed" not in text
   results.append({"scenario":scenario,"exit":rc,"rollback":"PASS"})
   print("PASS",scenario,"exit",rc,"rollback build/start/health/preservation",flush=True)
+ # Exercise the actual promotion boundary: legacy0696 -> bad native -> legacy,
+ # followed by a successful legacy -> native transition, still with zero bots.
+ git("switch","-c","integration/legacy","0696a00")
+ assert update("HEAD")==0,"legacy installation"
+ legacy=git("rev-parse","HEAD");health("26.1");assert digest()==before
+ git("switch","-c","integration/cross-failure",baseline)
+ p=app/"package.json";data=json.loads(p.read_text());data["scripts"]["build"]="npm run build -w server && node -e \"process.exit(43)\"";p.write_text(json.dumps(data,indent=2)+"\n")
+ bad=commit("isolated native failure over legacy")
+ git("switch","integration/legacy")
+ rc=update(bad);assert rc!=0
+ health("26.1");assert digest()==before
+ assert (state/"deployed-revision").read_text().strip()==legacy
+ assert git("rev-parse","HEAD")==legacy and not git("status","--porcelain")
+ results.append({"scenario":"native-to-legacy-rollback","exit":rc,"rollback":"PASS"})
+ print("PASS failed native promotion restores0696a00 legacy API/build",flush=True)
+ assert update(baseline)==0,"legacy-to-native successful promotion"
+ health();assert digest()==before
+ assert (state/"deployed-revision").read_text().strip()==baseline
+ print("PASS successful0696a00-to-native update without hooks/proxy",flush=True)
  # Validate all archived members stay inside synthetic fixture paths (no live secrets).
  import tarfile
  for archive in (state/"backups/updates").glob("*.tar.gz"):
