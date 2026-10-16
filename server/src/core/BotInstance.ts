@@ -1,4 +1,5 @@
 import { enableAuthMe } from "./authme";
+import { detachUntilEnd } from "./botCleanup";
 import { EventEmitter } from "events";
 import * as fs from "fs";
 import * as path from "path";
@@ -1097,6 +1098,8 @@ export class BotInstance extends EventEmitter {
     });
 
     bot.on("end", (reason: string) => {
+      // A stopped old socket must not tear down a newly connected bot.
+      if (this.bot !== bot) return;
       this.log.info(`Connection closed (${reason || "unknown"})`);
       if (this.tasks.currentSummary) {
         this.log.warn("Active tasks cancelled due to lost connection (task persistence: Phase 10)");
@@ -1373,7 +1376,7 @@ export class BotInstance extends EventEmitter {
     this.bot = null;
     if (bot) {
       try {
-        bot.removeAllListeners();
+        detachUntilEnd(bot);
       } catch {
         /* noop */
       }
