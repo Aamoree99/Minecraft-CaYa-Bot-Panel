@@ -255,7 +255,7 @@ export class TaskQueue extends EventEmitter {
         task.state = "running";
         this.emitUpdate();
 
-        const boundedSkill = /^(craft|collect-block|collect-wood|collect-drops|mine|deposit|withdraw|goto)$/.test(task.def.type);
+        const boundedSkill = /^(craft|collect-block|collect-wood|collect-drops|mine|deposit|withdraw|goto|harvest|plant|till)$/.test(task.def.type);
         const timeoutMs = task.def.timeoutMs ?? (boundedSkill ? 120_000 : 0);
         const noProgressMs = task.def.noProgressMs ?? (boundedSkill ? 45_000 : 0);
         const started = Date.now();
@@ -270,8 +270,7 @@ export class TaskQueue extends EventEmitter {
               ? `No progress for ${noProgressMs / 1000} seconds` : undefined;
           if (!reason || task.token.cancelled) return;
           limitError = reason;
-          abortToken(task.token, reason);
-          this.emit("taskAbort", this.summarize(task), reason);
+          this.cancelAll(reason);
           task.detach?.();
         }, Math.min(250, Math.max(10, Math.min(timeoutMs || 250, noProgressMs || 250))));
 

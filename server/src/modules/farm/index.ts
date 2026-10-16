@@ -1,3 +1,4 @@
+import { harvestResultError } from "./result";
 import type { Bot } from "mineflayer";
 import type { Block } from "prismarine-block";
 import { Vec3 } from "vec3";
@@ -1019,6 +1020,7 @@ export class FarmService {
     const hasChest = opts.depositX != null && opts.depositY != null && opts.depositZ != null;
     const wantChest = hasChest || opts.depositNearest !== false;
     let depositNote = "";
+    let depositError: string | undefined;
     if (wantChest) {
       restoreDefaultMovement(this.instance);
       try {
@@ -1026,13 +1028,16 @@ export class FarmService {
         depositNote = " Deposited to chest.";
       } catch (e) {
         if (token.cancelled) throw e;
-        depositNote = ` Chest: ${e instanceof Error ? e.message : String(e)}`;
+        depositError = e instanceof Error ? e.message : String(e);
+        depositNote = ` Chest: ${depositError}`;
         this.log().warn("Harvest deposit failed", e instanceof Error ? e.message : String(e));
       }
     }
     const msg = `Harvested ${harvested} crop(s)${replant ? `, replanted ${replanted}` : ""}${failed ? ` · ${failed} failed` : ""}.${depositNote}`;
     this.log().info("Harvest finished", msg);
-    report({ done: cells.length, total: cells.length, label: `harvested ${harvested}` });
+    report({ done: harvested, total: cells.length, label: msg });
+    const error = harvestResultError(harvested, replanted, failed, replant, depositError);
+    if (error) throw new Error(error);
     return msg;
     } finally {
       releaseJump();
