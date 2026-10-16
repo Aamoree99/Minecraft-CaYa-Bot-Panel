@@ -25,6 +25,7 @@ interface SmartCraftContext {
   report: ProgressFn;
   stack: Set<string>;
   stepsDone: number;
+  acquire: boolean;
   portableTable?: { x: number; y: number; z: number };
   portableFurnace?: { x: number; y: number; z: number };
 }
@@ -96,16 +97,10 @@ function recipeCandidates(bot: Bot, itemId: number): RecipeLike[] {
     }
   }
 
-  const registry = bot.registry as unknown as {
-    recipes?: Record<string | number, RecipeLike[] | RecipeLike>;
-    recipesByResult?: Record<string | number, RecipeLike[] | RecipeLike>;
-  };
-  for (const source of [registry.recipes?.[itemId], registry.recipesByResult?.[itemId]]) {
-    if (Array.isArray(source)) out.push(...source);
-    else if (source && typeof source === "object") out.push(source);
-  }
-
-  return [...new Set(out)];
+  // registry.recipes contains raw data, not executable prismarine Recipe objects.
+  return [...new Set(out)].filter((recipe) =>
+    Array.isArray(recipe.delta) && recipe.delta.some((d) => d.count < 0)
+  );
 }
 
 function recipeOutputCount(recipe: RecipeLike, itemId: number): number {
@@ -154,7 +149,7 @@ function selectRecipe(bot: Bot, itemName: string, itemId: number): RecipeLike | 
         const name = bot.registry.items[id]?.name ?? "";
         if (family && name.startsWith(`${family}_`)) value += 30;
         if (family && woodFamily(name) && !name.startsWith(`${family}_`)) value -= 20;
-        value -= countItem(bot, name) > 0 ? 0 : 1;
+        value -= Math.max(0, (ingredients.get(id) ?? 0) - countItem(bot, name)) * 100;
       }
       value -= ingredients.size;
       return value;
@@ -232,7 +227,7 @@ export function smartPreviewPlan(instance: BotInstance, item: string, count = 1)
       if (!ingredient) continue;
       walk(
         ingredient,
-        countItem(bot, ingredient) + perOperation * operations,
+        perOperation * operations,
         depth + 1,
         new Set([...stack, current])
       );
@@ -250,7 +245,8 @@ export async function runSmartCraftInline(
   item: string,
   count: number,
   token: TaskToken,
-  report: ProgressFn
+  report: ProgressFn,
+  acquire = true
 ): Promise<void> {
   const bot = requireBot(instance);
   const name = normalize(item);
@@ -261,7 +257,8 @@ export async function runSmartCraftInline(
     token,
     report,
     stack: new Set(),
-    stepsDone: 0
+    stepsDone: 0,
+    acquire
   };
 
   try {
@@ -294,7 +291,7 @@ async function ensureItem(
     let missing = targetCount - countItem(bot, itemName);
 
     // Önce oyuncunun yakındaki chest/barrel/shulker depolarını kullan.
-    if (missing > 0) {
+    if (missing > 0 && ctx.acquire) {
       await withdrawBuildMaterials(instance, [itemName], missing, token, (label) => {
         report({ done: countItem(bot, itemName), total: targetCount, label });
       });
@@ -317,6 +314,7 @@ async function ensureItem(
     const recipe = itemId == null ? null : selectRecipe(bot, itemName, itemId);
     if (!recipe || itemId == null) {
       report({ done: countItem(bot, itemName), total: targetCount, label: `Collecting: ${itemName}` });
+      if (!ctx.acquire) throw new Error(`Missing materials: ${itemName} ${countItem(bot, itemName)}/${targetCount}`);
       await instance.gather.runCollectBlock(itemName, targetCount, token, report);
       return;
     }
@@ -331,7 +329,7 @@ async function ensureItem(
     for (const [ingredientId, perOperation] of ingredients) {
       const ingredient = bot.registry.items[ingredientId]?.name;
       if (!ingredient) throw new Error(`${itemName}: tarif girdisi bilinmiyor (${ingredientId})`);
-      const ingredientTarget = countItem(bot, ingredient) + perOperation * operations;
+      const ingredientTarget = perOperation * operations;
       report({
         done: ctx.stepsDone,
         total: ctx.stepsDone + ingredients.size + 1,
@@ -360,27 +358,25 @@ async function executeRecipe(
     if (token.cancelled) throw new Error(token.reason ?? "cancelled");
     const missing = targetCount - countItem(bot, itemName);
     const output = recipeOutputCount(selected, itemId);
-    const wantedOperations = Math.max(1, Math.ceil(missing / output));
-
     let table: unknown = null;
-    let executable = bot.recipesFor(itemId, null, 1, null) as unknown[];
-    if (!executable.length) {
+    let executable = bot.recipesFor(itemId, null, 1, null);
+    if (!executable.length && selected.requiresTable) {
       table = await ensureCraftingTable(ctx);
-      executable = bot.recipesFor(itemId, null, 1, table as never) as unknown[];
+      executable = bot.recipesFor(itemId, null, 1, table as never);
     }
-    if (!executable.length) throw new Error(`Recipe not applicable: ${itemName}`);
-
+    if (!executable.length) throw new Error(`Missing materials or recipe not applicable: ${itemName}`);
+    const recipe = executable.find((r) => JSON.stringify(r.delta) === JSON.stringify(selected.delta)) ?? executable[0]!;
+    const expected = recipeOutputCount(recipe, itemId);
     const before = countItem(bot, itemName);
     report({ done: before, total: targetCount, label: `Craft: ${itemName} ${before}/${targetCount}` });
-    try {
-      await bot.craft(executable[0] as never, wantedOperations, (table ?? undefined) as never);
-    } catch {
-      // Bazı sunucular toplu craft paketini reddeder; tekli dene.
-      await bot.craft(executable[0] as never, 1, (table ?? undefined) as never);
-    }
-    await sleep(80);
+    // One operation at a time: an exception may follow a partial server-side craft.
+    // Never retry an ambiguous batch, which could duplicate the requested work.
+    await bot.craft(recipe, 1, (table ?? undefined) as never);
+    const deadline = Date.now() + 1500;
+    while (countItem(bot, itemName) < before + expected && Date.now() < deadline && !token.cancelled) await sleep(50);
+    if (token.cancelled) throw new Error(token.reason ?? "cancelled");
     const after = countItem(bot, itemName);
-    if (after <= before) throw new Error(`${itemName}: inventory did not increase after craft`);
+    if (after < before + expected) throw new Error(`${itemName}: server did not confirm craft (${after - before}/${expected})`);
     ctx.stepsDone++;
   }
 
@@ -400,6 +396,7 @@ async function ensureCraftingTable(ctx: SmartCraftContext): Promise<unknown> {
     return table;
   }
 
+  if (!ctx.instance.config.movement.allowPlace) throw new Error("Crafting table required; none reachable and placing is disabled");
   await ensureItem(ctx, "crafting_table", Math.max(1, countItem(bot, "crafting_table") + 1), 1);
   const placed = await placePortableBlock(ctx, "crafting_table");
   ctx.portableTable = placed.position;

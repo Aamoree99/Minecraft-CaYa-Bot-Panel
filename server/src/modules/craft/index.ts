@@ -89,7 +89,9 @@ export class CraftService {
   }
 
   private async runCraft(item: string, count: number, token: TaskToken, report: ProgressFn) {
-    await runSmartCraftInline(this.instance, item, count, token, report);
+    const bot = this.requireBot();
+    const before = bot.inventory.items().filter((i) => i.name === item).reduce((sum, i) => sum + i.count, 0);
+    await runSmartCraftInline(this.instance, item, before + count, token, report, false);
     this.log().success(`Craft done: ${item}`);
   }
 
