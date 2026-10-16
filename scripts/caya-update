@@ -70,7 +70,9 @@ rollback() {
   exit "$result"
 }
 build() {
-  (cd "$APP" && as_caya npm ci --include=dev --no-audit --no-fund && as_caya npm run test:unit && as_caya npm run typecheck && as_caya npm run build)
+  (cd "$APP" &&
+    { if [[ -f vendor/native/sources.json ]]; then as_caya npm run prepare:native-deps; fi; } &&
+    as_caya npm ci --include=dev --no-audit --no-fund && as_caya npm run test:unit && as_caya npm run typecheck && as_caya npm run build)
 }
 health() {
   local bind port
