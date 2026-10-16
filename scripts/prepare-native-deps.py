@@ -41,6 +41,15 @@ def main():
      names=['package/minecraft-data/data/pc/26.1/blocks.json','package/minecraft-data/data/pc/26.1/items.json']
      for name in names:t.extract(name,ref,filter='data')
     subprocess.run(['python3',str(ROOT/'vendor/native/repair-data.py'),str(package),str(ref/'package')],check=True)
-   archive(package,OUT/(key+'.tgz'))
-   print(key,manifest[key]['version'],hashlib.sha512((OUT/(key+'.tgz')).read_bytes()).hexdigest()[:16])
+   intermediate=OUT/(key+'.tgz')
+   archive(package,intermediate)
+   digest=hashlib.sha256(intermediate.read_bytes()).hexdigest()[:20]
+   filename=f'{key}-{digest}.tgz'
+   intermediate.replace(OUT/filename)
+   for relative in ['package.json','server/package.json']:
+    file=ROOT/relative;config=json.loads(file.read_text())
+    dependency='mineflayer' if key=='mineflayer' else 'minecraft-data'
+    config['dependencies'][dependency]='file:'+('../' if relative.startswith('server/') else '')+'.native-deps/'+filename
+    file.write_text(json.dumps(config,indent=2)+'\n')
+   print(key,manifest[key]['version'],filename)
 if __name__=='__main__':main()

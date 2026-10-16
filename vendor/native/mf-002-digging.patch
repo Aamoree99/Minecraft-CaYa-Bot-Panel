@@ -1,0 +1,138 @@
+diff --git a/lib/blockPlace.js b/lib/blockPlace.js
+index 5e1ce54..5e22103 100644
+--- a/lib/blockPlace.js
++++ b/lib/blockPlace.js
+@@ -9,7 +9,7 @@ function writeBlockPlace (bot, packet) {
+   return bot._client.write('block_place', {
+     hand: packet.hand ?? 0,
+     hitResult: { location, direction, cursorX, cursorY, cursorZ, insideBlock, worldBorderHit },
+-    sequence: packet.sequence ?? 0
++    sequence: packet.sequence ?? bot._nextSequence?.() ?? 0
+   })
+ }
+ module.exports = { writeBlockPlace }
+diff --git a/lib/playerActionIds.js b/lib/playerActionIds.js
+new file mode 100644
+index 0000000..5209a8d
+--- /dev/null
++++ b/lib/playerActionIds.js
+@@ -0,0 +1,7 @@
++// Adapted from PrismarineJS/mineflayer#4146 (651195051e539c7737397b1c1167c882848031f3).
++// The scoped data does not yet expose the upstream feature, so gate on wire protocol.
++function getPlayerActionIds (bot) {
++  const shifted = bot.protocolVersion >= 777
++  return { start: 0, abort: shifted ? 2 : 1, finish: shifted ? 3 : 2, releaseUseItem: shifted ? 6 : 5 }
++}
++module.exports = { getPlayerActionIds }
+diff --git a/lib/plugins/digging.js b/lib/plugins/digging.js
+index 5e71a0e..5436c26 100644
+--- a/lib/plugins/digging.js
++++ b/lib/plugins/digging.js
+@@ -1,3 +1,4 @@
++const { getPlayerActionIds } = require('../playerActionIds')
+ const { performance } = require('perf_hooks')
+ const { createDoneTask, createTask } = require('../promise_utils')
+ const BlockFaces = require('prismarine-world').iterators.BlockFace
+@@ -6,6 +7,7 @@ const { Vec3 } = require('vec3')
+ module.exports = inject
+ 
+ function inject (bot) {
++  const digStatus = getPlayerActionIds(bot)
+   let swingInterval = null
+   let waitTimeout = null
+ 
+@@ -131,9 +133,10 @@ function inject (bot) {
+ 
+     diggingTask = createTask()
+     bot._client.write('block_dig', {
+-      status: 0, // start digging
++      status: digStatus.start, // start digging
+       location: block.position,
+-      face: bot.targetDigFace // default face is 1 (top)
++      face: bot.targetDigFace, // default face is 1 (top)
++      sequence: bot._nextSequence()
+     })
+     waitTimeout = setTimeout(finishDigging, waitTime)
+     bot.targetDigBlock = block
+@@ -150,9 +153,10 @@ function inject (bot) {
+       waitTimeout = null
+       if (bot.targetDigBlock) {
+         bot._client.write('block_dig', {
+-          status: 2, // finish digging
++          status: digStatus.finish, // finish digging
+           location: bot.targetDigBlock.position,
+-          face: bot.targetDigFace // always the same as the start face
++          face: bot.targetDigFace, // always the same as the start face
++          sequence: bot._nextSequence()
+         })
+       }
+       bot.targetDigBlock = null
+@@ -179,9 +183,10 @@ function inject (bot) {
+       swingInterval = null
+       waitTimeout = null
+       bot._client.write('block_dig', {
+-        status: 1, // cancel digging
++        status: digStatus.abort, // cancel digging
+         location: bot.targetDigBlock.position,
+-        face: cancellationDiggingFace
++        face: cancellationDiggingFace,
++        sequence: bot._nextSequence()
+       })
+       const block = bot.targetDigBlock
+       bot.targetDigBlock = null
+diff --git a/lib/plugins/generic_place.js b/lib/plugins/generic_place.js
+index c924107..4f5bb05 100644
+--- a/lib/plugins/generic_place.js
++++ b/lib/plugins/generic_place.js
+@@ -81,7 +81,7 @@ function inject (bot) {
+         cursorY: dy,
+         cursorZ: dz,
+         insideBlock: false,
+-        sequence: 0, // 1.19.0
++        sequence: bot._nextSequence(), // shared prediction sequence
+         worldBorderHit: false // 1.21.3
+       })
+     }
+diff --git a/lib/plugins/inventory.js b/lib/plugins/inventory.js
+index b4b7154..c5e56aa 100644
+--- a/lib/plugins/inventory.js
++++ b/lib/plugins/inventory.js
+@@ -1,3 +1,4 @@
++const { getPlayerActionIds } = require('../playerActionIds')
+ const { writeBlockPlace } = require('../blockPlace')
+ const assert = require('assert')
+ const { Vec3 } = require('vec3')
+@@ -40,6 +41,7 @@ function inject (bot, { hideErrors, serverManagedWindows = [] }) {
+ 
+   let eatingTask = createDoneTask()
+   let sequence = 0
++  bot._nextSequence = () => ++sequence
+ 
+   let nextActionNumber = 0 // < 1.17
+   let stateId = -1
+@@ -152,14 +154,14 @@ function inject (bot, { hideErrors, serverManagedWindows = [] }) {
+ 
+   function deactivateItem () {
+     const body = {
+-      status: 5,
++      status: getPlayerActionIds(bot).releaseUseItem,
+       location: new Vec3(0, 0, 0),
+       face: 5
+     }
+ 
+     if (bot.supportFeature('useItemWithOwnPacket')) {
+       body.face = 0
+-      body.sequence = 0
++      body.sequence = bot._nextSequence()
+     }
+ 
+     bot._client.write('block_dig', body)
+@@ -246,7 +248,7 @@ function inject (bot, { hideErrors, serverManagedWindows = [] }) {
+         cursorY: cursorPos.y,
+         cursorZ: cursorPos.z,
+         insideBlock: false,
+-        sequence: 0, // 1.19.0+
++        sequence: bot._nextSequence(), // shared prediction sequence
+         worldBorderHit: false // 1.21.3+
+       })
+     }
