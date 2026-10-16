@@ -212,6 +212,8 @@ export class WorkerService {
                         if(available(item)<needed)throw Error(`SUPPLY_RESULT_MISMATCH: ${item}`);
                     };
                     if (job.mode === "miner") {
+                        // Logs are harvestable by hand: bootstrap wood must not depend on a pickaxe.
+                        if (!/^(.+_log|.+_stem|log)$/.test(job.item)) {
                         const tool = bot.inventory.items().find(i => /_pickaxe$/.test(i.name) && usable(i, bot.registry, w.minDurability));
                         if (!tool) {
                             const p = w.containers.TOOLS;
@@ -232,6 +234,7 @@ export class WorkerService {
                         const capacity=bot.inventory.items().filter(i=>/_pickaxe$/.test(i.name)&&usable(i,bot.registry,w.minDurability)).reduce((n,i)=>n+Math.max(0,(bot.registry.items[i.type]?.maxDurability??0)-(i.durabilityUsed??0)-w.minDurability+1),0);
                         const missingCapacity=Math.max(0,job.count-count(job.item)-capacity);
                         if(missingCapacity){const max=bot.registry.itemsByName.wooden_pickaxe?.maxDurability??59;const spares=Math.ceil(missingCapacity/Math.max(1,max-w.minDurability+1));if(spares>8)throw Error("TOOL_CAPACITY: assignment needs more than8 spare tools; split into smaller jobs");await supply("wooden_pickaxe",bot.inventory.items().filter(i=>i.name==="wooden_pickaxe"&&usable(i,bot.registry,w.minDurability)).reduce((n,i)=>n+i.count,0)+spares);}
+                        }
                         await runGoto(this.instance,job.origin.x,job.origin.y,job.origin.z,2,token,report,{canDig:false,allowPlace:false,timeoutMs:30000});
                         token.workArea = { origin: job.origin, radius: job.radius };
                         let error: unknown;
