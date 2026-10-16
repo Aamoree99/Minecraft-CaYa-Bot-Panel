@@ -29,6 +29,8 @@ export interface OllamaChatOptions {
   host: string;
   model: string;
   temperature?: number;
+  /** Explicit override for models with optional reasoning. */
+  think?: boolean;
   numCtx?: number;
   keepAlive?: string;
   signal?: AbortSignal;
@@ -97,6 +99,11 @@ export async function ollamaChat(
     model: opts.model,
     messages,
     stream: false,
+    // This installed MLX profile emitted malformed XML in default thinking mode.
+    // Keep the workaround request-local; never alter the model/runtime or retry actions.
+    ...(opts.think !== undefined
+      ? { think: opts.think }
+      : opts.model === "qwen3.5-9b-abliterated:mlx-32k" ? { think: false } : {}),
     keep_alive: opts.keepAlive ?? "5m",
     tools: tools.length ? tools : undefined,
     options: {

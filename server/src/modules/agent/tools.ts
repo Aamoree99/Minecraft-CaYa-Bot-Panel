@@ -1,4 +1,5 @@
 import { Vec3 } from "vec3";
+import { workspace, containerAllowed } from "../worker/policy";
 import type { BotInstance } from "../../core/BotInstance";
 import type { BotManager } from "../../core/BotManager";
 import { PRIORITY } from "../../core/TaskQueue";
@@ -398,6 +399,47 @@ const stopAll: AgentToolDef = {
   async execute(ctx) {
     ctx.manager.cancelAllWork(ctx.inst.config.id, "agent stop_all");
     return "All work stopped (tasks, movement, combat, build).";
+  }
+};
+
+/** Report reviewed warehouse observations separately from unharvested terrain. */
+const getStorageStock: AgentToolDef = {
+  name: "get_storage_stock",
+  description: "Read last observed stock of the assigned shared warehouse, with timestamps. Use for how much wood/resources we HAVE, not nearby unharvested trees. Cached observations may be stale.",
+  category: "info",
+  inputSchema: S.obj({}),
+  async execute(ctx) {
+    if (!workspace) throw Error("No trusted workspace");
+    const w = workspace; // Workspace policy admits only Overworld.
+    const rows = ctx.manager.worldMemory.chestsFor(ctx.inst.config.serverId)
+      .filter(c => c.dimension === "overworld" && containerAllowed(w, c));
+    const unique = new Map(rows.map(c => [c.x + "," + c.y + "," + c.z, c]));
+    return JSON.stringify({
+      source: "cached warehouse observations; not a live scan or total of all inventories",
+      containers: [...unique.values()].map(c => ({
+        x: c.x, y: c.y, z: c.z, observedAt: new Date(c.updatedAt).toISOString(),
+        items: [...c.items.reduce((totals, item) => {
+          totals.set(item.name, (totals.get(item.name) ?? 0) + item.count);
+          return totals;
+        }, new Map<string, number>())].map(([name, count]) => ({ name, count }))
+      }))
+    });
+  }
+};
+
+/** Fixed finite return; no model-selected coordinates, digging or supply jobs. */
+const workerReturn: AgentToolDef = {
+  name: "worker_return",
+  description: "Start ONE bounded Worker return to the reviewed camp and sort carried resources. No gathering. Requires mob-only defense. Check get_tasks for actual completion; queued is not success.",
+  category: "movement",
+  inputSchema: S.obj({}),
+  async execute(ctx) {
+    requireOnline(ctx);
+    if (!workspace) throw Error("No trusted workspace");
+    return taskReply(ctx.inst.enqueueAction({
+      type: "worker", mode: "return", count: 1, cycles: 1,
+      origin: workspace.base, radius: 1, deadlineMs: 30000, attempts: 1
+    }));
   }
 };
 
@@ -1312,6 +1354,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   listBots,
   getStatus,
   getInventory,
+  getStorageStock,
   lookAround,
   findBlocks,
   getRecentChat,
@@ -1326,6 +1369,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   sendWhisper,
   serverCommand, // gated: utility mode
   // movement
+  workerReturn,
   gotoTool,
   gotoPlayer,
   followPlayer,
