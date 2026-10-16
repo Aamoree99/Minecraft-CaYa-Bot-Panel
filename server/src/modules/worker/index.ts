@@ -159,7 +159,7 @@ export class WorkerService {
                             return;
                         if (depth > 4)
                             throw Error(`MISSING_MATERIAL: ${item} (${count(item)}/${needed})`);
-                        const p = w.containers[category(item) ?? ""];
+                        const p = /_pickaxe$/.test(item)?undefined:w.containers[category(item) ?? ""];
                         if (p) {
                             try {
                                 await withdrawFromChest(this.instance, { ...p, item, count: needed - count(item) }, token, report);
@@ -203,6 +203,7 @@ export class WorkerService {
                         const capacity=bot.inventory.items().filter(i=>/_pickaxe$/.test(i.name)&&usable(i,bot.registry,w.minDurability)).reduce((n,i)=>n+Math.max(0,(bot.registry.items[i.type]?.maxDurability??0)-(i.durabilityUsed??0)-w.minDurability+1),0);
                         const missingCapacity=Math.max(0,job.count-count(job.item)-capacity);
                         if(missingCapacity){const max=bot.registry.itemsByName.wooden_pickaxe?.maxDurability??59;const spares=Math.ceil(missingCapacity/Math.max(1,max-w.minDurability+1));if(spares>8)throw Error("TOOL_CAPACITY: assignment needs more than8 spare tools; split into smaller jobs");await supply("wooden_pickaxe",count("wooden_pickaxe")+spares);}
+                        await runGoto(this.instance,job.origin.x,job.origin.y,job.origin.z,2,token,report,{canDig:false,allowPlace:false,timeoutMs:30000});
                         token.workArea = { origin: job.origin, radius: job.radius };
                         let error: unknown;
                         for (let attempt = 0; attempt < job.attempts && count(job.item) < job.count; attempt++) {
@@ -227,7 +228,8 @@ export class WorkerService {
                             throw Error("Unsupported assigned crop");
                         if (count(seed) < 1)
                             await supply(seed, 8);
-                        token.workArea = { origin: job.origin, radius: job.radius };
+                        await runGoto(this.instance,job.origin.x,job.origin.y,job.origin.z,2,token,report,{canDig:false,allowPlace:false,timeoutMs:30000});
+                        token.workArea = { origin: job.origin, radius: Math.ceil(job.radius*Math.SQRT2)+1 };
                         result = await this.instance.farm.runHarvest({ ...job.origin, radius: job.radius, maxBlocks: 64, replant: true, depositNearest: false }, token, report);
                         record.produced += Math.max(0, count(job.item) - before);
                         note("HARVEST", { result });
