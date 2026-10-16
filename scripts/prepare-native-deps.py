@@ -23,6 +23,9 @@ def archive(folder,target):
    if not p.is_file():continue
    info=tar.gettarinfo(str(p),'package/'+str(p.relative_to(folder)))
    info.uid=info.gid=0;info.uname=info.gname='';info.mtime=0
+   # git apply creates/replaces files under the caller umask (updater:077).
+   # Preserve executable intent while making archive bytes independent of it.
+   info.mode=0o755 if info.mode & 0o111 else 0o644
    with p.open('rb') as f:tar.addfile(info,f)
 def main():
  manifest=json.loads(MANIFEST.read_text());OUT.mkdir(exist_ok=True)

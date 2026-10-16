@@ -42,3 +42,20 @@ if [ "$*" = "run prepare:native-deps" ] && [ "$FAIL_BOOTSTRAP" = "yes" ]; then e
   const failure=run(true);assert.equal(failure.status,42);assert.deepEqual(failure.calls,["run prepare:native-deps"]);
  }finally{rmSync(dir,{recursive:true,force:true});}
 });
+
+
+test("native archive integrity is independent of restrictive updater file permissions",()=>{
+ const result=spawnSync("python3",["-c",`
+import importlib.util,tempfile,os
+from pathlib import Path
+spec=importlib.util.spec_from_file_location("native", "scripts/prepare-native-deps.py")
+native=importlib.util.module_from_spec(spec);spec.loader.exec_module(native)
+with tempfile.TemporaryDirectory() as tmp:
+ root=Path(tmp);package=root/"package";package.mkdir()
+ plain=package/"plain.js";plain.write_text("module.exports=1\\n")
+ executable=package/"exec.js";executable.write_text("#!/usr/bin/env node\\n")
+ plain.chmod(0o644);executable.chmod(0o755);native.archive(package,root/"a.tgz")
+ plain.chmod(0o600);executable.chmod(0o700);native.archive(package,root/"b.tgz")
+ assert (root/"a.tgz").read_bytes()==(root/"b.tgz").read_bytes()
+`],{encoding:"utf8"});assert.equal(result.status,0,result.stderr);
+});
