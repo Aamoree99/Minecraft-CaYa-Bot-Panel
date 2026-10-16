@@ -12,6 +12,7 @@ export interface Box {
     max: Point;
 }
 export interface Workspace {
+    partnerUuids?: string[];
     spawn: Point;
     margin: number;
     base: Point;
@@ -27,6 +28,9 @@ export function parseWorkspace(v: any): Workspace {
     if (!v || v.dimension !== "overworld" || !point(v.spawn) || !point(v.base) || !Number.isFinite(v.margin) || v.margin < 4 || v.margin > 64 || !Array.isArray(v.owned) || !v.containers)
         throw Error("Invalid trusted Overworld workspace");
     const w: Workspace = { ...v, protected:v.protected??[], minDurability: v.minDurability ?? 8, criticalHealth: v.criticalHealth ?? 8, foodThreshold: v.foodThreshold ?? 14 };
+    if (w.partnerUuids !== undefined && (!Array.isArray(w.partnerUuids) || w.partnerUuids.some(id => typeof id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))))
+        throw Error("Invalid trusted partner UUID roster");
+    w.partnerUuids = [...new Set((w.partnerUuids ?? []).map(id => id.toLowerCase()))];
     if (!Number.isFinite(w.minDurability) || w.minDurability < 1)
         throw Error("Invalid durability threshold");
     if (!Number.isFinite(w.criticalHealth) || w.criticalHealth < 2 || w.criticalHealth > 18 || !Number.isFinite(w.foodThreshold) || w.foodThreshold < 1 || w.foodThreshold > 20)
@@ -54,8 +58,14 @@ export function assertOwned(p: Point): void { assertPosition(p); if (workspace &
     throw Error("OWNERSHIP: mutation outside explicitly assigned own area"); }
 export function guardMovements(m: any): void { if (!workspace)
     return; const w = workspace; m.exclusionAreasStep.push((b: any) => insideWorld(w, b.position) ? 0 : Infinity); m.exclusionAreasBreak.push((b: any) => owned(w, b.position) ? 0 : Infinity); m.exclusionAreasPlace.push((b: any) => owned(w, b.position) ? 0 : Infinity); }
-export function nearbyWorkerVisitor(bot: Pick<Bot,"players"|"username"|"entity">): boolean {
-    return Object.values(bot.players??{}).some(p=>p.username!==bot.username && p.gamemode!==3 && p.entity && p.entity.position.distanceTo(bot.entity.position)<24);
+// Trust is scoped to the reviewed workspace; names never confer partner status.
+export function nearbyWorkerVisitor(bot: Pick<Bot,"players"|"username"|"entity">, partnerUuids: readonly string[] = workspace?.partnerUuids ?? []): boolean {
+    const roster = new Set(partnerUuids.map(id => id.toLowerCase()));
+    const selfUuid = bot.players?.[bot.username]?.uuid;
+    const member = typeof selfUuid === "string" && roster.has(selfUuid.toLowerCase());
+    return Object.values(bot.players??{}).some(p=>p.username!==bot.username && p.gamemode!==3 &&
+        !(member && typeof p.uuid === "string" && roster.has(p.uuid.toLowerCase())) &&
+        p.entity && p.entity.position.distanceTo(bot.entity.position)<24);
 }
 export function attachWorkspace(instance: BotInstance, bot: Bot): void {
     if (!workspace)

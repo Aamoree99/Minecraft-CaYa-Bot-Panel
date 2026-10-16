@@ -152,3 +152,33 @@ test("worker excludes warehouse seed provision from same-item crop production",a
  `],{cwd:process.cwd(),env:{...process.env,CAYA_DATA_DIR:dir,CAYA_WORKSPACE_FILE:config},encoding:"utf8",timeout:10000});assert.equal(result.status,0,result.stderr+result.stdout);
  }finally{fs.rmSync(dir,{recursive:true,force:true});}
 });
+
+test("worker partner roster trusts exact UUIDs mutually and keeps visitor protection",async()=>{
+ const {nearbyWorkerVisitor}=await import("../server/src/modules/worker/policy");
+ const {Vec3}=require("vec3");
+ const roster=["11111111-1111-3111-8111-111111111111","22222222-2222-3222-8222-222222222222"];
+ const names=["TestBot","PartnerBot"];
+ for(const self of [0,1]){
+  const other=1-self;
+  const partner:any={username:names[other],uuid:roster[other],gamemode:0,entity:{position:new Vec3(1,201,0)}};
+  const bot:any={username:names[self],uuid:roster[self],entity:{position:new Vec3(0,201,0)},players:{partner,[names[self]]:{username:names[self],uuid:roster[self]}}};
+  assert.equal(nearbyWorkerVisitor(bot,roster),false);
+  assert.equal(nearbyWorkerVisitor(bot,[]),true);
+  for(const uuid of [undefined,"00000000-0000-0000-0000-000000000000"]){
+   partner.uuid=uuid;assert.equal(nearbyWorkerVisitor(bot,roster),true);
+  }
+  partner.uuid=roster[other].toUpperCase();assert.equal(nearbyWorkerVisitor(bot,roster),false);
+  bot.players[names[self]].uuid="00000000-0000-0000-0000-000000000000";assert.equal(nearbyWorkerVisitor(bot,roster),true);bot.players[names[self]].uuid=roster[self];
+  const visitor={username:"Visitor",uuid:"00000000-0000-0000-0000-000000000000",gamemode:0,entity:{position:new Vec3(23.99,201,0)}};
+  bot.players.visitor=visitor;assert.equal(nearbyWorkerVisitor(bot,roster),true);
+  visitor.entity.position=new Vec3(24,201,0);assert.equal(nearbyWorkerVisitor(bot,roster),false);
+  visitor.entity.position=new Vec3(1,201,0);visitor.gamemode=3;assert.equal(nearbyWorkerVisitor(bot,roster),false);
+ }
+});
+test("workspace partner roster validates UUIDs and defaults to no trust",()=>{
+ assert.deepEqual(parseWorkspace({...w,dimension:"overworld"}).partnerUuids,[]);
+ const id="11111111-1111-3111-8111-111111111111";
+ assert.deepEqual(parseWorkspace({...w,dimension:"overworld",partnerUuids:[id,id.toUpperCase()]}).partnerUuids,[id]);
+ for(const partnerUuids of ["*",["TestBot"],[null],[123],{}])
+  assert.throws(()=>parseWorkspace({...w,dimension:"overworld",partnerUuids}),/partner UUID/);
+});
