@@ -1,0 +1,26 @@
+diff --git a/lib/plugins/physics.js b/lib/plugins/physics.js
+index c7e1289..177f15a 100755
+--- a/lib/plugins/physics.js
++++ b/lib/plugins/physics.js
+@@ -582,7 +582,7 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+         // echoed a position: flushing this stale one would move the bot
+         // backwards in time and trip movement anti-cheats.
+         if (generation !== forcedMoveGeneration || bot._client.ended) return
+-        sendPacketPositionAndLook(delayedPos, delayedYaw, delayedPitch, delayedOnGround)
++        if (bot.protocolVersion < 777) sendPacketPositionAndLook(delayedPos, delayedYaw, delayedPitch, delayedOnGround)
+         shouldUsePhysics = true
+         bot.jumpTicks = 0
+         lastSentYaw = bot.entity.yaw
+@@ -592,7 +592,11 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+       return
+     }
+ 
+-    sendPacketPositionAndLook(pos, newYaw, newPitch, bot.entity.onGround)
++    // 26.3 teleport_confirm already carries the resolved pose. Extra immediate
++    // movement echoes can produce two position packets before tick_end when
++    // AuthMe forces consecutive teleports, which Paper rejects. Let the next
++    // physics tick send the latest position once, followed by tick_end.
++    if (bot.protocolVersion < 777) sendPacketPositionAndLook(pos, newYaw, newPitch, bot.entity.onGround)
+ 
+     shouldUsePhysics = true
+     bot.jumpTicks = 0
