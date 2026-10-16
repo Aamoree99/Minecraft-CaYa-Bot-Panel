@@ -20,6 +20,7 @@ export const PRIORITY = {
 
 export interface TaskToken {
   cancelled: boolean;
+  workArea?: { origin: { x: number; y: number; z: number }; radius: number };
   reason?: string;
   /** Aborted on cancel/detach so in-flight runners can stop even if they miss `cancelled`. */
   abort?: AbortController;

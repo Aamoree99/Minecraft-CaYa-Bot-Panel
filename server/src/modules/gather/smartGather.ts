@@ -1,9 +1,10 @@
 import type { Bot } from "mineflayer";
 import type { BotInstance } from "../../core/BotInstance";
-import type { ProgressFn, TaskToken } from "../../core/TaskQueue";
+import { abortToken, type ProgressFn, type TaskToken } from "../../core/TaskQueue";
 import type { CountMode } from "./index";
 import { boundedOp, digCancelable } from "../build/place";
 import { runGoto } from "../movement";
+import { gatherTarget, inWorkArea } from "./targets";
 import { ringSearch } from "./ringSearch";
 
 interface DropEntityLike {
@@ -166,6 +167,7 @@ export async function runSmartCollectDrops(
     const drops = (Object.values(bot.entities) as DropEntityLike[]).filter((entity) => {
       if (!entity || !isItemEntity(entity)) return false;
       if (bot.entity.position.distanceTo(entity.position) > radius) return false;
+      if (token.workArea && !inWorkArea(entity.position, token.workArea.origin, token.workArea.radius)) return false;
       const name = droppedItemName(entity, bot);
       if (!dropMatchesRequested(name, normalizedFilter)) return false;
       if ((failures.get(entity.id) ?? 0) >= 3) return false;
@@ -315,6 +317,30 @@ function isLikelyCraftedItem(name: string): boolean {
  * - doğrudan blok araması `includes` değil kesin isim eşleşmesidir
  */
 export async function runSmartCollectBlock(
+  instance: BotInstance, name: string, amount: number, token: TaskToken,
+  report: ProgressFn, countMode: CountMode = "add"
+): Promise<void> {
+  const bot = requireBot(instance);
+  if (!instance.config.movement.canDig) throw new Error("Digging disabled; administrator must enable canDig");
+  const parentArea = token.workArea;
+  token.workArea ??= { origin: bot.entity.position.clone(), radius: 16 };
+  const area = token.workArea;
+  const guard = setInterval(() => {
+    if (token.cancelled) return;
+    const reason = !bot.entity || bot.health <= 0 ? "Bot died" : instance.status !== "online" ? "Connection lost"
+      : !inWorkArea(bot.entity.position, area.origin, area.radius) ? "Left permitted work area"
+      : bot.entity.position.y < area.origin.y - 3 ? "Unsafe fall detected" : undefined;
+    if (!reason) return;
+    abortToken(token, reason);
+    bot.pathfinder?.setGoal(null);
+    bot.clearControlStates();
+    bot.stopDigging();
+  }, 100);
+  try { await runSmartCollectBlockInner(instance, name, amount, token, report, countMode); }
+  finally { clearInterval(guard); token.workArea = parentArea; }
+}
+
+async function runSmartCollectBlockInner(
   instance: BotInstance,
   name: string,
   amount: number,
@@ -323,7 +349,10 @@ export async function runSmartCollectBlock(
   countMode: CountMode = "add"
 ): Promise<void> {
   const bot = requireBot(instance);
-  const requested = name.replace(/^minecraft:/, "");
+  const source = name.replace(/^minecraft:/, "");
+  const silk = Boolean(bot.heldItem?.enchants?.some((e) => e.name === "silk_touch"));
+  const mapping = gatherTarget(bot.registry as never, source, silk);
+  const requested = mapping.drop;
   const have = () => requested === "log"
     ? bot.inventory.items().reduce((sum, item) => sum + ((item.name.endsWith("_log") || item.name.endsWith("_stem")) ? item.count : 0), 0)
     : countNamed(bot, [requested]);
@@ -359,7 +388,7 @@ export async function runSmartCollectBlock(
     return;
   }
 
-  if (instance.craft.canCraft(requested) || isLikelyCraftedItem(requested)) {
+  if (!bot.registry.blocksByName[source] && (instance.craft.canCraft(requested) || isLikelyCraftedItem(requested))) {
     try {
       await instance.craft.runCraftInline(requested, target, token, report);
       if (have() >= target) return;
@@ -368,7 +397,7 @@ export async function runSmartCollectBlock(
     }
   }
 
-  await runDirectWorldGather(instance, requested, target, token, report);
+  await runDirectWorldGather(instance, requested, target, token, report, mapping.blocks);
 }
 
 async function runDirectWorldGather(
@@ -376,10 +405,11 @@ async function runDirectWorldGather(
   requested: string,
   target: number,
   token: TaskToken,
-  report: ProgressFn
+  report: ProgressFn,
+  sourceBlocks?: Set<string>
 ): Promise<void> {
   const bot = requireBot(instance);
-  const matcher = directBlockMatcher(requested);
+  const matcher = sourceBlocks ? (name: string) => sourceBlocks.has(name) : directBlockMatcher(requested);
   const countHave = () => {
     if (requested === "cobblestone") return countNamed(bot, ["cobblestone"]);
     if (requested === "cobbled_deepslate") return countNamed(bot, ["cobbled_deepslate"]);
@@ -387,40 +417,22 @@ async function runDirectWorldGather(
   };
 
   let got = countHave();
+  const startingInventory = got;
+  let mined = 0;
   report({ done: Math.min(got, target), total: target, label: `${requested} ${got}/${target}` });
   let noProgress = 0;
   const skipped = new Set<string>();
 
   while (got < target && !token.cancelled) {
-    let block = bot.findBlock({
-      matching: (b) => matcher(b.name) && !skipped.has(`${Math.floor(b.position.x)},${Math.floor(b.position.y)},${Math.floor(b.position.z)}`),
+    const area = token.workArea ?? { origin: bot.entity.position.clone(), radius: 16 };
+    const block = bot.findBlock({
+      matching: (b) => matcher(b.name) && (!b.position || (
+        inWorkArea(b.position, area.origin, area.radius) && b.position.y >= Math.floor(area.origin.y) &&
+        !skipped.has(`${Math.floor(b.position.x)},${Math.floor(b.position.y)},${Math.floor(b.position.z)}`)
+      )),
       maxDistance: 32
     });
-    if (!block) {
-      const found = await ringSearch(instance, token, report, {
-        step: RAW_GATHERABLE.has(requested) ? 24 : 28,
-        maxRadius: RAW_GATHERABLE.has(requested) ? 96 : 112,
-        surfaceTravel: true,
-        movement: { canDig: false, allowPlace: false, parkour: true, timeoutMs: 45_000 },
-        probe: (probeBot) =>
-          Boolean(
-            probeBot.findBlock({
-              matching: (candidate) =>
-                matcher(candidate.name) &&
-                !skipped.has(
-                  `${Math.floor(candidate.position.x)},${Math.floor(candidate.position.y)},${Math.floor(candidate.position.z)}`
-                ),
-              maxDistance: 20
-            })
-          )
-      });
-      if (!found) throw new Error(`${requested} not found nearby (use Mine for underground ores)`);
-      block = bot.findBlock({
-        matching: (b) => matcher(b.name) && !skipped.has(`${Math.floor(b.position.x)},${Math.floor(b.position.y)},${Math.floor(b.position.z)}`),
-        maxDistance: 32
-      });
-    }
-    if (!block) continue;
+    if (!block) throw new Error(`PARTIAL: Collected ${got}/${target} ${requested}. No more reachable blocks in permitted area`);
 
     const key = `${Math.floor(block.position.x)},${Math.floor(block.position.y)},${Math.floor(block.position.z)}`;
     const before = got;
@@ -430,8 +442,8 @@ async function runDirectWorldGather(
       await runGoto(instance, block.position.x, standY, block.position.z, 3, token, () => {}, {
         canDig: false,
         allowPlace: false,
-        parkour: true,
-        timeoutMs: 30_000
+        parkour: false,
+        timeoutMs: 15_000
       });
     } catch {
       skipped.add(key);
@@ -462,6 +474,7 @@ async function runDirectWorldGather(
       } catch {
         // optional plugin
       }
+      if (!live.canHarvest(bot.heldItem?.type ?? null)) throw new Error(`Tool cannot harvest ${live.name}`);
       const wait = typeof bot.digTime === "function" ? bot.digTime(live) : 1_000;
       const ms = Math.max(3_000, Math.min(12_000, (Number.isFinite(wait) ? wait : 1_000) + 3_500));
       await boundedOp(digCancelable(bot, live, token), token, ms, `dig ${live.name}`, () => {
@@ -471,6 +484,9 @@ async function runDirectWorldGather(
           /* */
         }
       });
+      const remainingBlock = bot.blockAt(live.position);
+      if (remainingBlock?.type === live.type) throw new Error("Server did not confirm block removal");
+      mined++;
       await collectDropsAfterDig(instance, requested, token);
     } catch (error) {
       skipped.add(key);
@@ -485,7 +501,7 @@ async function runDirectWorldGather(
 
     got = countHave();
     noProgress = got > before ? 0 : noProgress + 1;
-    report({ done: Math.min(got, target), total: target, label: `${requested} ${got}/${target}` });
+    report({ done: Math.min(got, target), total: target, label: `Collected ${got}/${target} ${requested}; blocks mined ${mined}, items gained ${got - startingInventory}` });
     if (noProgress >= 8) throw new Error(`${requested}: dug but drop did not enter inventory`);
   }
 

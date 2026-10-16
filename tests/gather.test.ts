@@ -1,0 +1,10 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import minecraftData from "minecraft-data";
+import {gatherTarget,inWorkArea} from "../server/src/modules/gather/targets";
+const data=minecraftData("26.1");
+for(const [block,drop] of [["stone","cobblestone"],["diamond_ore","diamond"],["iron_ore","raw_iron"]])test(`${block} counts ${drop}`,()=>assert.equal(gatherTarget(data as any,block,false).drop,drop));
+test("Silk Touch counts original block",()=>assert.equal(gatherTarget(data as any,"stone",true).drop,"stone"));
+test("item request uses data drop sources",()=>assert.ok(gatherTarget(data as any,"diamond",false).blocks.has("diamond_ore")));
+test("palette probes need no position",()=>assert.equal(inWorkArea(null,{x:10,y:70,z:10},16),true));
+test("work area bounds all axes",()=>{assert.equal(inWorkArea({x:27,y:70,z:10},{x:10,y:70,z:10},16),false);assert.equal(inWorkArea({x:10,y:50,z:10},{x:10,y:70,z:10},16),false);});
