@@ -82,3 +82,13 @@ test("worker routes cannot cut the blocked side of a diagonal glass corner",asyn
  guardWorkerCorners(moves);const neighbors:any[]=[];moves.getMoveDiagonal({}, {x:1,z:-1},neighbors);assert.deepEqual(neighbors,[]);
  blocked=false;moves.getMoveDiagonal({}, {x:1,z:-1},neighbors);assert.deepEqual(neighbors,["diagonal"]);
 });
+
+
+test("finite mining travel tolerates observed block approach drift without broadening resource search",async()=>{
+ const {inWorkArea,inGatherTravelArea}=await import("../server/src/modules/gather/targets");
+ const origin={x:975,y:201,z:960},target={x:970,y:201,z:958},observedFeet={x:969.4092864222439,y:201,z:957.6792227299444};
+ assert.equal(inWorkArea(target,origin,6),true);
+ assert.equal(inWorkArea(observedFeet,origin,6),false);
+ assert.equal(inGatherTravelArea(observedFeet,origin,6),true);
+ assert.equal(inGatherTravelArea({x:967,y:201,z:956},origin,6),false);
+});

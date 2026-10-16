@@ -10,6 +10,10 @@ export function inWorkArea(position: Point | null | undefined, origin: Point, ra
   if (!position) return true;
   return Math.hypot(position.x-origin.x, position.y-origin.y, position.z-origin.z) <= radius;
 }
+/** Foot position may be off-center while reaching an in-area block; search stays exact. */
+export function inGatherTravelArea(position:Point,origin:Point,radius:number):boolean {
+  return inWorkArea(position,origin,radius+1);
+}
 export function gatherTarget(registry: Registry, requested: string, silk: boolean) {
   const block = registry.blocksByName[requested];
   const drop = block && silk ? requested : block && block.drops?.length === 1

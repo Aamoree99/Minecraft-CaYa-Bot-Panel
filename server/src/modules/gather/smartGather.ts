@@ -5,7 +5,7 @@ import { abortToken, type ProgressFn, type TaskToken } from "../../core/TaskQueu
 import type { CountMode } from "./index";
 import { boundedOp, digCancelable } from "../build/place";
 import { runGoto } from "../movement";
-import { gatherTarget, inWorkArea, GoalItemPickup, verifiedPickupDelta } from "./targets";
+import { gatherTarget, inWorkArea, inGatherTravelArea, GoalItemPickup, verifiedPickupDelta } from "./targets";
 import { ringSearch } from "./ringSearch";
 
 const miningDropBackoff = new WeakMap<Bot, WeakMap<object, number>>();
@@ -325,7 +325,7 @@ export async function runSmartCollectBlock(
   const guard = setInterval(() => {
     if (token.cancelled) return;
     const reason = !bot.entity || bot.health <= 0 ? "Bot died" : instance.status !== "online" ? "Connection lost"
-      : !inWorkArea(bot.entity.position, area.origin, area.radius) ? "Left permitted work area"
+      : !inGatherTravelArea(bot.entity.position, area.origin, area.radius) ? "Left permitted work area"
       : bot.entity.position.y < area.origin.y - 3 ? "Unsafe fall detected" : undefined;
     if (!reason) return;
     token.failureReason=reason;
