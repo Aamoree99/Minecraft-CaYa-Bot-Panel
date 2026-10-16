@@ -1,0 +1,78 @@
+diff --git a/lib/plugins/physics.js b/lib/plugins/physics.js
+index 177f15a..c7b2f7c 100755
+--- a/lib/plugins/physics.js
++++ b/lib/plugins/physics.js
+@@ -107,6 +107,7 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+   let lastSentPitch = null
+   let doPhysicsTimer = null
+   let lastPhysicsFrameTime = null
++  let pendingTeleport = null
+   let shouldUsePhysics = false
+   bot.physicsEnabled = physicsEnabled ?? true
+   let deadTicks = 21
+@@ -163,6 +164,20 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+   function tickPhysics (now) {
+     if (bot._client.state !== 'play') return // do nothing outside of the play state (e.g. server transfer configuration phase)
+     if (!bot.entity?.position || !Number.isFinite(bot.entity.position.x)) return // entity not ready
++    // A teleport is acknowledged on the client tick, not on the network callback.
++    // Paper 26.3 validates the full ack against per-tick reference coordinates.
++    // Immediate acks during initial login can form a correction/ack feedback loop
++    // before its first server tick. Coalesce superseded corrections and send the
++    // one position echo before the ack, then close this client tick.
++    if (pendingTeleport) {
++      const teleport = pendingTeleport
++      pendingTeleport = null
++      tickCounter++
++      sendPacketPositionAndLook(new Vec3(teleport.x, teleport.y, teleport.z), teleport.yaw, teleport.pitch, false)
++      bot._client.write('teleport_confirm', teleport)
++      if (sendsClientTickEnd) bot._client.write('tick_end', {})
++      return
++    }
+     if (bot.blockAt(bot.entity.position) == null) return // check if chunk is unloaded
+     tickCounter++
+     if (bot.physicsEnabled && shouldUsePhysics) {
+@@ -201,6 +216,7 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+   })
+ 
+   function cleanup () {
++    pendingTeleport = null
+     clearInterval(doPhysicsTimer)
+     doPhysicsTimer = null
+   }
+@@ -552,14 +568,14 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+       // carry the position and rotation being acknowledged, so the server can
+       // validate the correction instead of trusting the id alone.
+       if (bot.protocolVersion >= 777) {
+-        bot._client.write('teleport_confirm', {
++        pendingTeleport = {
+           teleportId: packet.teleportId,
+           x: pos.x,
+           y: pos.y,
+           z: pos.z,
+           yaw: newYaw,
+           pitch: newPitch
+-        })
++        }
+       } else {
+         bot._client.write('teleport_confirm', { teleportId: packet.teleportId })
+       }
+@@ -645,9 +661,11 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+     shouldUsePhysics = false
+     respawnTimer = Date.now()
+     forcedMoveGeneration++
++    pendingTeleport = null
+     stopResidualMotion()
+   })
+   bot.on('respawn', () => {
++    pendingTeleport = null
+     shouldUsePhysics = false
+     stopResidualMotion()
+   })
+@@ -656,6 +674,7 @@ function inject (bot, { physicsEnabled, maxCatchupTicks }) {
+   bot._client.on('start_configuration', () => {
+     shouldUsePhysics = false
+     forcedMoveGeneration++
++    pendingTeleport = null
+     stopResidualMotion()
+   })
+   bot.on('login', () => {

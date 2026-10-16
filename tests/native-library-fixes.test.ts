@@ -20,14 +20,31 @@ test("linear delta and stepped absolute sync retain finite coordinates",()=>{con
 test("invalid entity coordinates are rejected before NaN propagates",()=>{const bot=entityBot("player");assert.throws(()=>bot._client.emit("rel_entity_move",{entityId:17,delta:{x:Infinity,y:0,z:0}}),/Invalid entity movement/);assert.equal(bot.entities[17].position.x,0);});
 
 
-test("consecutive native teleports acknowledge resolved poses without duplicate movement before tick end",()=>{
+test("consecutive native teleports flush only the latest resolved pose on the client tick",async(t)=>{
  const {EventEmitter}=require("node:events"),{Vec3}=require("vec3");
- const bot=new EventEmitter();bot.registry=require("prismarine-registry")("26.3");bot.version="26.3";bot.protocolVersion=777;bot.supportFeature=bot.registry.supportFeature;bot._client=new EventEmitter();bot.entity={position:new Vec3(0,118,0),velocity:new Vec3(0,0,0),yaw:0,pitch:0};
+ const bot=new EventEmitter();bot.registry=require("prismarine-registry")("26.3");bot.version="26.3";bot.protocolVersion=777;bot.supportFeature=bot.registry.supportFeature;bot._client=new EventEmitter();bot._client.state="play";bot.blockAt=()=>null;bot.entity={position:new Vec3(0,118,0),velocity:new Vec3(0,0,0),yaw:0,pitch:0};
  const writes:any[]=[];bot._client.write=(name:string,params:any)=>writes.push({name,params:{...params}});
  require("mineflayer/lib/plugins/physics")(bot,{});
+ t.after(()=>bot.emit("end"));
+ bot.emit("login");
  bot._client.emit("position",{teleportId:1,x:1,y:118,z:3,yaw:90,pitch:10,flags:{}});
  bot._client.emit("position",{teleportId:2,x:2,y:0,z:1,yaw:10,pitch:5,flags:{x:true,y:true,z:true,yaw:true,pitch:true}});
- assert.deepEqual(writes.map(w=>w.name),["teleport_confirm","teleport_confirm"]);
+ assert.deepEqual(writes,[]);
+ await new Promise(resolve=>setTimeout(resolve,80));
+ bot.emit("end");
+ assert.deepEqual(writes.map(w=>w.name),["position_look","teleport_confirm","tick_end"]);
  const pose=writes[1].params;assert.deepEqual({...pose,pitch:15},{teleportId:2,x:3,y:118,z:4,yaw:100,pitch:15});assert.ok(Math.abs(pose.pitch-15)<1e-10);
  bot.emit("end");
+});
+
+
+test("configuration transition discards a pending native teleport acknowledgement",async(t)=>{
+ const {EventEmitter}=require("node:events"),{Vec3}=require("vec3");
+ const bot=new EventEmitter();bot.registry=require("prismarine-registry")("26.3");bot.protocolVersion=777;bot.supportFeature=bot.registry.supportFeature;bot._client=new EventEmitter();bot._client.state="play";bot.blockAt=()=>null;bot.entity={position:new Vec3(0,118,0),velocity:new Vec3(0,0,0),yaw:0,pitch:0};
+ const writes:any[]=[];bot._client.write=(name:string)=>writes.push(name);
+ require("mineflayer/lib/plugins/physics")(bot,{});t.after(()=>bot.emit("end"));bot.emit("login");
+ bot._client.emit("position",{teleportId:1,x:1,y:118,z:3,yaw:90,pitch:10,flags:{}});
+ bot._client.emit("start_configuration");
+ await new Promise(resolve=>setTimeout(resolve,80));
+ assert.deepEqual(writes,[]);
 });
