@@ -331,6 +331,7 @@ export async function runSmartCollectBlock(
       : !inWorkArea(bot.entity.position, area.origin, area.radius) ? "Left permitted work area"
       : bot.entity.position.y < area.origin.y - 3 ? "Unsafe fall detected" : undefined;
     if (!reason) return;
+    token.failureReason=reason;
     abortToken(token, reason);
     bot.pathfinder?.setGoal(null);
     bot.clearControlStates();

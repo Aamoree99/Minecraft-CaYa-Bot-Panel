@@ -1,3 +1,4 @@
+import { safeDropLimit, unexpectedFall } from "./safety";
 import type { Bot } from "mineflayer";
 import { Movements, goals, pathfinder } from "mineflayer-pathfinder";
 import type { Entity } from "prismarine-entity";
@@ -56,14 +57,9 @@ function moveCfg(instance: BotInstance): MovementConfig {
   return instance.config.movement;
 }
 
-/** How far we may drop without dying. Config is a floor; health raises it. */
+/** Respect the configured maximum and current health. */
 function smartMaxDropDown(bot: Bot, cfg: MovementConfig): number {
-  const hp = Math.max(0, bot.health ?? 20);
-  const keepHp = 4; // never plan a fall that leaves us under 2 hearts
-  const affordableDmg = Math.max(0, Math.floor(hp - keepHp));
-  const byHealth = 3 + affordableDmg;
-  const configured = Math.max(2, cfg.maxDrop ?? 3);
-  return Math.max(configured, Math.min(10, byHealth));
+  return safeDropLimit(bot.health ?? 20, cfg.maxDrop ?? 3);
 }
 
 /** İnsanî dönüş hızı (°/tick) — sadece DURURKEN yapılan bakışlarda kullanılır */
@@ -302,7 +298,7 @@ function pathfinderGoal(
   instance: BotInstance,
   goal: goals.Goal,
   token: TaskToken,
-  opts?: { timeoutMs?: number; onStuckRetry?: () => void }
+  opts?: { timeoutMs?: number; startY?: number; onMove?: () => void; onStuckRetry?: () => void }
 ): Promise<void> {
   const bot = requireBot(instance);
   const timeoutMs = opts?.timeoutMs ?? GOTO_TIMEOUT_MS;
@@ -313,6 +309,7 @@ function pathfinderGoal(
     let lastPos = bot.entity?.position?.clone?.() ?? null;
     let lastMoveAt = Date.now();
     let stuckRetried = false;
+    let lastGroundY = opts?.startY ?? bot.entity.position.y;
 
     const stopGoal = () => {
       try {
@@ -326,6 +323,7 @@ function pathfinderGoal(
       clearTimeout(deadline);
       bot.removeListener("goal_reached", onReached);
       bot.removeListener("path_update", onPath);
+      bot.removeListener("physicsTick", onFall);
     };
     const finish = (fn: () => void) => {
       if (settled) return;
@@ -348,6 +346,19 @@ function pathfinderGoal(
       }
     };
 
+    const onFall = () => {
+      if (settled || !bot.entity || isTokenAborted(token)) return;
+      const motion=bot.entity as typeof bot.entity & {isInWater?: boolean;isInLava?: boolean};
+      if (unexpectedFall(lastGroundY,motion.position.y,smartMaxDropDown(bot,moveCfg(instance)),Boolean(motion.isInWater || motion.isInLava))) {
+        const reason=`Unsafe fall detected (${(lastGroundY-motion.position.y).toFixed(1)} blocks)`;
+        token.failureReason=reason;
+        instance.tasks.cancelAll(reason);
+        finish(()=>{stopGoal();reject(new Error(reason));});
+        return;
+      }
+      if (motion.onGround) lastGroundY=motion.position.y;
+    };
+
     const watch = setInterval(() => {
       if (settled) return;
       if (isTokenAborted(token) || instance.controlEpoch !== epoch) {
@@ -367,6 +378,7 @@ function pathfinderGoal(
       if (!lastPos || pos.distanceTo(lastPos) > 0.35) {
         lastPos = pos.clone();
         lastMoveAt = Date.now();
+        opts?.onMove?.();
       } else if (Date.now() - lastMoveAt > STUCK_WINDOW_MS) {
         if (!stuckRetried) {
           stuckRetried = true;
@@ -402,6 +414,7 @@ function pathfinderGoal(
       });
     }, timeoutMs);
 
+    bot.on("physicsTick", onFall);
     bot.on("goal_reached", onReached);
     bot.on("path_update", onPath);
     bot.pathfinder.setGoal(goal);
@@ -433,6 +446,7 @@ export async function runGoto(
 ): Promise<void> {
   const bot = requireBot(instance);
   const dist = Math.round(bot.entity.position.distanceTo({ x, y, z } as never));
+  const startY=bot.entity.position.y;
   report({ done: 0, total: dist, label: `targete gidiliyor (${dist} blocks)` });
 
   ensureMovement(instance, {
@@ -447,6 +461,8 @@ export async function runGoto(
 
   await pathfinderGoal(instance, new goals.GoalNear(x, y, z, Math.max(1, range)), token, {
     timeoutMs: options?.timeoutMs,
+    startY,
+    onMove: () => report({done:Math.max(0,dist-Math.round(bot.entity.position.distanceTo({x,y,z} as never))),total:dist,label:"moving toward destination"}),
     onStuckRetry: () => report({ done: 0, total: dist, label: "stuck — recalculating path" })
   });
 

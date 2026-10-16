@@ -22,6 +22,7 @@ export interface TaskToken {
   cancelled: boolean;
   workArea?: { origin: { x: number; y: number; z: number }; radius: number };
   reason?: string;
+  failureReason?: string;
   /** Aborted on cancel/detach so in-flight runners can stop even if they miss `cancelled`. */
   abort?: AbortController;
 }
@@ -317,8 +318,17 @@ export class TaskQueue extends EventEmitter {
         } else {
           task.state = task.token.cancelled ? "cancelled" : "done";
         }
-        if (limitError) { task.state = "failed"; task.error = limitError; }
+        if (limitError || task.token.failureReason) { task.state = "failed"; task.error = limitError ?? task.token.failureReason; }
         if (task.token.cancelled && !task.error) task.error = task.token.reason;
+        if (task.state === "failed" && boundedSkill) {
+          const reason=`Stopped after failed ${task.def.type}: ${task.error ?? "unknown error"}`;
+          for (const pending of this.queue.splice(0)) {
+            pending.state="cancelled";
+            pending.error=reason;
+            this.pushHistory(pending);
+          }
+          this.emit("queueCleared",reason);
+        }
         this.pushHistory(task);
         if (this.current === task) this.current = null;
         this.emitUpdate();
