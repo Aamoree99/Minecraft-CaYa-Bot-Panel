@@ -72,3 +72,13 @@ test("reviewed SAUNA fixture protects the supporting deck while allowing crops a
  for(const p of [{x:970,y:200,z:955},{x:954,y:200,z:969},{x:954,y:200,z:965}])assert.equal(owned(fixture,p),false);
  for(const p of [{x:970,y:201,z:955},{x:954,y:201,z:969}])assert.equal(owned(fixture,p),true);
 });
+
+
+
+
+test("worker routes cannot cut the blocked side of a diagonal glass corner",async()=>{
+ const {guardWorkerCorners}=await import("../server/src/modules/movement/corners");
+ let blocked=true;const moves:any={getBlock:(_:unknown,x:number,y:number,z:number)=>({physical:blocked&&x===0&&z===-1&&y===0,safe:true}),getMoveDiagonal:(_:unknown,__:unknown,out:any[])=>out.push("diagonal")};
+ guardWorkerCorners(moves);const neighbors:any[]=[];moves.getMoveDiagonal({}, {x:1,z:-1},neighbors);assert.deepEqual(neighbors,[]);
+ blocked=false;moves.getMoveDiagonal({}, {x:1,z:-1},neighbors);assert.deepEqual(neighbors,["diagonal"]);
+});

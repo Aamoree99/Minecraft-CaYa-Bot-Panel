@@ -1,4 +1,5 @@
-import { guardMovements, assertPosition } from "../worker/policy";
+import { guardWorkerCorners } from "./corners";
+import { guardMovements, assertPosition, workspace } from "../worker/policy";
 import { safeDropLimit, unexpectedFall } from "./safety";
 import type { Bot } from "mineflayer";
 import { Movements, goals, pathfinder } from "mineflayer-pathfinder";
@@ -193,6 +194,7 @@ export function ensureMovement(instance: BotInstance, opts?: EnsureMovementOpts)
 
   patchMovementsForTurningLadders(movements);
   guardMovements(movements);
+  if (workspace) guardWorkerCorners(movements);
   bot.pathfinder.setMovements(movements);
   try {
     const pf = bot.pathfinder as unknown as { thinkTimeout?: number };
