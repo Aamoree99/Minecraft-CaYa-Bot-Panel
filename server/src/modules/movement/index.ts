@@ -422,6 +422,8 @@ function pathfinderGoal(
 }
 
 export interface GotoOptions {
+  /** Internal physical goal; all movement guards still apply. */
+  goal?: goals.Goal;
   /** Yol hesaplanırken arazi kazılabilsin mi? Kaynak/ağaç aramada false kullanılır. */
   canDig?: boolean;
   /** Pathfinder geçici blok/scaffold koyabilsin mi? */
@@ -459,7 +461,7 @@ export async function runGoto(
   if (moveCfg(instance).humanize !== false) await sleep(60 + Math.floor(Math.random() * 120)); // insanî tepki
   if (token.cancelled) throw new Error(token.reason ?? "Task cancelled.");
 
-  await pathfinderGoal(instance, new goals.GoalNear(x, y, z, Math.max(1, range)), token, {
+  await pathfinderGoal(instance, options?.goal ?? new goals.GoalNear(x, y, z, Math.max(1, range)), token, {
     timeoutMs: options?.timeoutMs,
     startY,
     onMove: () => report({done:Math.max(0,dist-Math.round(bot.entity.position.distanceTo({x,y,z} as never))),total:dist,label:"moving toward destination"}),

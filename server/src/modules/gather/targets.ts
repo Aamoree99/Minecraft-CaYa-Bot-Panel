@@ -1,3 +1,4 @@
+import { goals } from "mineflayer-pathfinder";
 export interface Point { x: number; y: number; z: number }
 interface Registry {
   blocksByName: Record<string, {name: string; drops?: number[]}>;
@@ -21,4 +22,21 @@ export function gatherTarget(registry: Registry, requested: string, silk: boolea
     }
   }
   return { drop, blocks };
+}
+
+/** Path nodes are block coordinates; item pickup needs actual feet coordinates. */
+export class GoalItemPickup extends goals.Goal {
+  constructor(private readonly item: Point) { super(); }
+  heuristic(node: Point): number {
+    return Math.max(0, Math.hypot(node.x + 0.5 - this.item.x, node.z + 0.5 - this.item.z) - 0.8)
+      + Math.max(0, Math.abs(node.y - this.item.y) - 0.8);
+  }
+  isEnd(node: Point): boolean {
+    return Math.hypot(node.x + 0.5 - this.item.x, node.z + 0.5 - this.item.z) <= 0.8
+      && Math.abs(node.y - this.item.y) <= 0.8;
+  }
+}
+
+export function verifiedPickupDelta(beforeAll: number, beforeNamed: number, afterAll: number, afterNamed: number, knownName: boolean): number {
+  return Math.max(0, knownName ? afterNamed - beforeNamed : afterAll - beforeAll);
 }

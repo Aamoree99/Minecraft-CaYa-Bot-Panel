@@ -4,7 +4,7 @@ import { abortToken, type ProgressFn, type TaskToken } from "../../core/TaskQueu
 import type { CountMode } from "./index";
 import { boundedOp, digCancelable } from "../build/place";
 import { runGoto } from "../movement";
-import { gatherTarget, inWorkArea } from "./targets";
+import { gatherTarget, inWorkArea, GoalItemPickup, verifiedPickupDelta } from "./targets";
 import { ringSearch } from "./ringSearch";
 
 interface DropEntityLike {
@@ -207,7 +207,7 @@ export async function runSmartCollectDrops(
         1,
         token,
         () => {},
-        { timeoutMs: gotoTimeout, canDig: false, allowPlace: false }
+        { timeoutMs: gotoTimeout, canDig: false, allowPlace: false, parkour: false, goal: new GoalItemPickup(target.position) }
       );
     } catch {
       failures.set(target.id, (failures.get(target.id) ?? 0) + 1);
@@ -216,42 +216,28 @@ export async function runSmartCollectDrops(
     }
 
     const waitUntil = Date.now() + 2_400;
-    let picked = false;
+    let picked = 0;
     while (!token.cancelled && Date.now() < waitUntil) {
       const afterAll = totalInventoryCount(bot);
       const afterNamed = targetName ? countNamed(bot, [targetName]) : afterAll;
-      if (!entityExists(bot, target.id) || afterAll > beforeAll || afterNamed > beforeNamed) {
-        picked = true;
-        break;
-      }
+      picked = verifiedPickupDelta(beforeAll, beforeNamed, afterAll, afterNamed, Boolean(targetName));
+      if (picked > 0) break;
       await sleep(80);
     }
 
     if (picked) {
-      verified++;
+      verified += picked;
       failures.delete(target.id);
     } else {
       failures.set(target.id, (failures.get(target.id) ?? 0) + 1);
-      // Akıntıda veya blok forde remaining item for biraz farklı açıdan tekrar yaklaş.
-      try {
-        await runGoto(
-          instance,
-          target.position.x + 0.35,
-          target.position.y,
-          target.position.z + 0.35,
-          2,
-          token,
-          () => {},
-          { timeoutMs: 3_500, canDig: false, allowPlace: false }
-        );
-      } catch {
-        // best effort
-      }
+
     }
   }
 
   if (token.cancelled) throw new Error(token.reason ?? "cancelled");
-  report({ done: verified, total: verified, label: `Ground items withdrawn: ${verified}` });
+  const remaining = [...failures.keys()].filter(id => entityExists(bot, id)).length;
+  if (remaining > 0) throw new Error(`PARTIAL: Picked up ${verified} items; ${remaining} drops could not be collected within the allowed time/attempts.`);
+  report({ done: verified, total: verified, label: `Ground items picked up: ${verified}` });
   return verified;
 }
 
