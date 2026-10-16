@@ -1,3 +1,4 @@
+import { usable } from "../worker/policy";
 import { withStorageAccess } from "./containerAccess";
 import type { Bot } from "mineflayer";
 import type { Block } from "prismarine-block";
@@ -20,6 +21,8 @@ import { runGoto } from "../movement";
 export const CONTAINER_BLOCKS = new Set(["chest", "trapped_chest", "barrel"]);
 
 export interface ChestTargetSpec {
+  /** Optional durability reserve when selecting existing tools; worn stock is not supply. */
+  minDurability?: number;
   /** belirli sandık koordinatı; verilmezse en yakın konteyner */
   x?: number;
   y?: number;
@@ -250,6 +253,8 @@ async function withdrawFromChestUnlocked(
 ): Promise<number> {
   const bot = requireBot(instance);
   const item = spec.item.replace(/^minecraft:/, "").trim().toLowerCase();
+  if (spec.minDurability !== undefined && (!Number.isInteger(spec.minDurability) || spec.minDurability < 1)) throw Error("Invalid durability reserve");
+  const accepts = (i: any) => spec.minDurability === undefined || usable(i, bot.registry, spec.minDurability);
   const def = bot.registry.itemsByName[item];
   if (!def) throw new Error(`Unknown item: ${item}`);
 
@@ -264,7 +269,7 @@ async function withdrawFromChestUnlocked(
   let confirmedGot = 0;
   try {
     await confirmWindow(bot, win, token);
-    const inChest = win.containerItems?.().filter((i) => i.name === item).reduce((s, i) => s + i.count, 0) ?? 0;
+    const inChest = win.containerItems?.().filter((i) => i.name === item && accepts(i)).reduce((s, i) => s + i.count, 0) ?? 0;
     const target = Math.min(Math.max(1, Math.floor(spec.count)), inChest || spec.count);
     let got = 0;
     while (got < target) {
@@ -274,7 +279,7 @@ async function withdrawFromChestUnlocked(
       let opFailed = false;
       try {
         if (!win.withdraw) throw new Error("Chest withdraw API unavailable");
-        await transferWithConfirmation(win as never, def.id, chunk, true, (slot, button) => confirmedWindowClick(bot, slot, button, token), async () => { await confirmWindow(bot, win, token); } );
+        await transferWithConfirmation(win as never, def.id, chunk, true, (slot, button) => confirmedWindowClick(bot, slot, button, token), async () => { await confirmWindow(bot, win, token); }, accepts );
       } catch (e) {
         lastError = e instanceof Error ? e.message : String(e);
         opFailed = true;
@@ -322,7 +327,7 @@ async function readChestStockUnlocked(instance: BotInstance, spec: ChestTargetSp
     await confirmWindow(bot, win, token);
     emitChestMemory(instance, block.position, win);
     const stock: Record<string, number> = {};
-    for (const item of win.containerItems?.() ?? []) stock[item.name] = (stock[item.name] ?? 0) + item.count;
+    for (const item of win.containerItems?.() ?? []) if (spec.minDurability === undefined || usable(item, bot.registry, spec.minDurability)) stock[item.name] = (stock[item.name] ?? 0) + item.count;
     return stock;
   } finally { win.close(); }
 }

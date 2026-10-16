@@ -168,7 +168,8 @@ export class WorkerService {
                     let result = "";
                     const supply = async (item: string, needed: number): Promise<void> => {
                         check();
-                        if(count(item)>=needed)return;
+                        const available = (name:string) => bot.inventory.items().filter(i=>i.name===name&&usable(i,bot.registry,w.minDurability)).reduce((n,i)=>n+i.count,0);
+                        if(available(item)>=needed)return;
                         const stock:Record<string,number>={};
                         const sources = new Map<string, Array<{position: typeof w.base; count:number}>>();
                         const visited = new Set<string>();
@@ -176,14 +177,14 @@ export class WorkerService {
                             const key = `${p.x},${p.y},${p.z}`;
                             if(c==="TOOLS" || visited.has(key)) continue;
                             visited.add(key);
-                            for(const [name, amount] of Object.entries(await readChestStock(this.instance,p,token,report))) {
+                            for(const [name, amount] of Object.entries(await readChestStock(this.instance,{...p,minDurability:w.minDurability},token,report))) {
                                 stock[name] = (stock[name] ?? 0) + amount;
                                 const entries = sources.get(name) ?? [];
                                 entries.push({position:p,count:amount}); sources.set(name,entries);
                             }
                         }
                         const inventory:Record<string,number>={};
-                        for(const i of bot.inventory.items())inventory[i.name]=(inventory[i.name]??0)+i.count;
+                        for(const i of bot.inventory.items().filter(i=>usable(i,bot.registry,w.minDurability)))inventory[i.name]=(inventory[i.name]??0)+i.count;
                         const steps=planSupply(item,needed,inventory,stock,
                             n=>{const id=bot.registry.itemsByName[n]?.id;return id==null?[]:bot.recipesAll(id,null,true);},
                             id=>bot.registry.items[id]?.name??"");
@@ -201,14 +202,14 @@ export class WorkerService {
                                     const wanted = Math.min(remaining,source.count);
                                     if(wanted <= 0) continue;
                                     check();
-                                    const taken = await withdrawFromChest(this.instance,{...source.position,item:step.item,count:wanted},token,report);
+                                    const taken = await withdrawFromChest(this.instance,{...source.position,item:step.item,count:wanted,minDurability:w.minDurability},token,report);
                                     remaining -= taken; source.count -= taken;
                                     note("SUPPLY_WITHDRAW",{item:step.item,count:taken,container:source.position});
                                 }
                                 if(remaining > 0) throw Error(`SUPPLY_RESULT_MISMATCH: ${step.item}; missing ${remaining}`);
                             }
                         }
-                        if(count(item)<needed)throw Error(`SUPPLY_RESULT_MISMATCH: ${item}`);
+                        if(available(item)<needed)throw Error(`SUPPLY_RESULT_MISMATCH: ${item}`);
                     };
                     if (job.mode === "miner") {
                         const tool = bot.inventory.items().find(i => /_pickaxe$/.test(i.name) && usable(i, bot.registry, w.minDurability));
@@ -216,7 +217,9 @@ export class WorkerService {
                             const p = w.containers.TOOLS;
                             if (p) {
                                 try {
-                                    await withdrawFromChest(this.instance, { ...p, item: "wooden_pickaxe", count: 1 }, token, report);
+                                    const stock=await readChestStock(this.instance,{...p,minDurability:w.minDurability},token,report);
+                                    const pick=Object.keys(stock).find(name=>/_pickaxe$/.test(name)&&stock[name]>0);
+                                    if(pick)await withdrawFromChest(this.instance, { ...p, item: pick, count: 1, minDurability:w.minDurability }, token, report);
                                 }
                                 catch (e) {
                                     note("TOOL_WITHDRAW", { error: String(e) });
@@ -224,11 +227,11 @@ export class WorkerService {
                             }
                         }
                         if (!bot.inventory.items().some(i => /_pickaxe$/.test(i.name) && usable(i, bot.registry, w.minDurability))) {
-                            await supply("wooden_pickaxe", count("wooden_pickaxe") + 1);
+                            await supply("wooden_pickaxe", bot.inventory.items().filter(i=>i.name==="wooden_pickaxe"&&usable(i,bot.registry,w.minDurability)).reduce((n,i)=>n+i.count,0) + 1);
                         }
                         const capacity=bot.inventory.items().filter(i=>/_pickaxe$/.test(i.name)&&usable(i,bot.registry,w.minDurability)).reduce((n,i)=>n+Math.max(0,(bot.registry.items[i.type]?.maxDurability??0)-(i.durabilityUsed??0)-w.minDurability+1),0);
                         const missingCapacity=Math.max(0,job.count-count(job.item)-capacity);
-                        if(missingCapacity){const max=bot.registry.itemsByName.wooden_pickaxe?.maxDurability??59;const spares=Math.ceil(missingCapacity/Math.max(1,max-w.minDurability+1));if(spares>8)throw Error("TOOL_CAPACITY: assignment needs more than8 spare tools; split into smaller jobs");await supply("wooden_pickaxe",count("wooden_pickaxe")+spares);}
+                        if(missingCapacity){const max=bot.registry.itemsByName.wooden_pickaxe?.maxDurability??59;const spares=Math.ceil(missingCapacity/Math.max(1,max-w.minDurability+1));if(spares>8)throw Error("TOOL_CAPACITY: assignment needs more than8 spare tools; split into smaller jobs");await supply("wooden_pickaxe",bot.inventory.items().filter(i=>i.name==="wooden_pickaxe"&&usable(i,bot.registry,w.minDurability)).reduce((n,i)=>n+i.count,0)+spares);}
                         await runGoto(this.instance,job.origin.x,job.origin.y,job.origin.z,2,token,report,{canDig:false,allowPlace:false,timeoutMs:30000});
                         token.workArea = { origin: job.origin, radius: job.radius };
                         let error: unknown;

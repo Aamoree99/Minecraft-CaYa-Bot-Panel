@@ -6,7 +6,7 @@ export function transferredCount(before: readonly [number, number], after: reado
   return removed;
 }
 
-interface Stack { type: number; count: number; stackSize: number }
+export interface Stack { type: number; count: number; stackSize: number; durabilityUsed?: number }
 interface TransferWindow {
   slots: Array<Stack | null>;
   inventoryStart: number;
@@ -16,7 +16,8 @@ interface TransferWindow {
 /** Ordinary inventory clicks, confirmed individually (modern protocols don't acknowledge accepted clicks). */
 export async function transferWithConfirmation(
   win: TransferWindow, type: number, wanted: number, withdraw: boolean,
-  click: (slot: number, button: number) => Promise<void>, confirm: () => Promise<void>
+  click: (slot: number, button: number) => Promise<void>, confirm: () => Promise<void>,
+  acceptsSource: (item: Stack) => boolean = () => true
 ): Promise<void> {
   const sourceStart = withdraw ? 0 : win.inventoryStart;
   const sourceEnd = withdraw ? win.inventoryStart : win.inventoryEnd;
@@ -30,7 +31,7 @@ export async function transferWithConfirmation(
   let left = wanted;
   for (let attempts=0; left>0 && attempts<128; attempts++) {
     if (win.selectedItem) throw new Error("Container cursor occupied; refusing ambiguous transfer");
-    const source = find(sourceStart,sourceEnd,(i)=>i?.type===type);
+    const source = find(sourceStart,sourceEnd,(i)=>i?.type===type && acceptsSource(i));
     if (source<0) break;
     let dest = find(destStart,destEnd,(i)=>i?.type===type && i.count<i.stackSize);
     if (dest<0) dest=find(destStart,destEnd,(i)=>i===null);

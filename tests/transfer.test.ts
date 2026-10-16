@@ -25,3 +25,12 @@ test("transfer rejects excess or mismatched server deltas instead of hiding them
  ] as const) assert.throws(()=>transferredCount(before,after,wanted),/TRANSFER_MISMATCH/);
  assert.equal(transferredCount([4,0],[2,2],2),2);
 });
+
+test("withdrawal skips exhausted source tools and selects a later usable stack",async()=>{
+ const worn={type:1,count:1,stackSize:1,durabilityUsed:52},fresh={type:1,count:1,stackSize:1,durabilityUsed:3};
+ const win:any={slots:[worn,fresh,null],inventoryStart:2,inventoryEnd:3,selectedItem:null},seen:number[]=[];
+ await transferWithConfirmation(win,1,1,true,async(slot,button)=>{
+  seen.push(slot);const x=win.slots[slot];win.slots[slot]=win.selectedItem;win.selectedItem=x;
+ },async()=>{},item=>(item.durabilityUsed??0)<=51);
+ assert.deepEqual(seen,[1,2]);assert.equal(win.slots[0],worn);assert.equal(win.slots[2],fresh);assert.equal(win.selectedItem,null);
+});
