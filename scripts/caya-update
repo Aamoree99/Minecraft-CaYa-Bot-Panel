@@ -15,7 +15,7 @@ export PATH="$NODE_DIR:$PATH"
 [[ $MODE == check || $(id -u) == 0 ]] || { echo 'Run as root' >&2; exit 2; }
 exec 9>"$STATE/caya-update.lock"
 flock -n 9 || { echo 'Another update is running' >&2; exit 2; }
-as_caya() { if [[ $(id -un) == "$USER_NAME" ]]; then env PATH="$PATH" "$@"; else runuser -u "$USER_NAME" -- env PATH="$PATH" "$@"; fi; }
+as_caya() { (cd "$APP" && if [[ $(id -un) == "$USER_NAME" ]]; then env PATH="$PATH" "$@"; else runuser -u "$USER_NAME" -- env PATH="$PATH" "$@"; fi); }
 git_caya() { as_caya git -C "$APP" "$@"; }
 [[ -z $(git_caya status --porcelain) ]] || { echo 'Working tree is dirty; commit or preserve changes first' >&2; exit 2; }
 # Refuse owner/permission problems while the current service is still running.
