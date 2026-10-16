@@ -22,3 +22,13 @@ test-server/logs/
 *.log
 .DS_Store
 Thumbs.db
+
+# credentials and deployment state
+.env
+.env.*
+!.env.example
+secrets/
+*.pass
+*.token
+backups/
+logs/

@@ -426,8 +426,8 @@ export function defaultBotConfig(username: string, serverId: string): BotConfig 
     authorizedPlayers: [],
     inventory: { autoBestGear: true, bannedItems: [], keepItems: [] },
     combat: {
-      // varsayılan: mob — boşta zombie gelince savunsun (panelden kapatılabilir)
-      defendMode: "mob",
+      // New instances are passive until explicitly configured by an administrator.
+      defendMode: "off",
       defendRange: 12,
       reach: 3.0,
       cpsCap: 8,
@@ -506,8 +506,8 @@ export function defaultBotConfig(username: string, serverId: string): BotConfig 
     },
     chat: { minMessageIntervalMs: 1500 },
     movement: {
-      canDig: true,
-      allowPlace: true,
+      canDig: false,
+      allowPlace: false,
       allowSprint: true,
       allowParkour: true,
       scaffoldBlocks: ["dirt", "cobblestone", "netherrack"],
