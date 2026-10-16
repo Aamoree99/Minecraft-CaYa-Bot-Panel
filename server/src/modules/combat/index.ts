@@ -2168,21 +2168,24 @@ private async fleeFrom(from: { x: number; y: number; z: number }, dist: number, 
     const pos = bot.entity.position.clone();
     const initial = Math.hypot(pos.x-from.x,pos.z-from.z);
     const angle = initial>0.1 ? Math.atan2(pos.z-from.z,pos.x-from.x) : 0;
+    const required=Math.min(initial+4,12);
     const candidates:Vec3[]=[];
     if(workspace)candidates.push(new Vec3(workspace.base.x,workspace.base.y,workspace.base.z));
-    for(const distance of [dist,Math.min(dist,12),Math.min(dist,8)])for(const turn of [0,Math.PI/4,-Math.PI/4,Math.PI/2,-Math.PI/2,Math.PI])candidates.push(pos.offset(Math.cos(angle+turn)*distance,0,Math.sin(angle+turn)*distance));
+    for(const distance of [dist,Math.min(dist,12),Math.min(dist,8),Math.min(dist,4)])for(const turn of [0,Math.PI/4,-Math.PI/4,Math.PI/2,-Math.PI/2,3*Math.PI/4,-3*Math.PI/4,Math.PI])candidates.push(pos.offset(Math.cos(angle+turn)*distance,0,Math.sin(angle+turn)*distance));
     const safe=candidates.filter(p=>{
       if(workspace&&!insideWorld(workspace,p))return false;
-      if(Math.hypot(p.x-from.x,p.z-from.z)<initial+4)return false;
+      if(Math.hypot(p.x-from.x,p.z-from.z)<required)return false;
       const floor=bot.blockAt(p.offset(0,-1,0)),feet=bot.blockAt(p),head=bot.blockAt(p.offset(0,1,0));
       return floor?.boundingBox==="block"&&!["magma_block","campfire","cactus"].includes(floor.name)&&feet?.name==="air"&&head?.name==="air";
-    }).sort((a,b)=>Math.hypot(b.x-from.x,b.z-from.z)-Math.hypot(a.x-from.x,a.z-from.z));
+    });
+    const clear=(p:Vec3)=>{const d=pos.distanceTo(p),steps=Math.ceil(d*2);for(let n=1;n<=steps;n++){const q=pos.offset((p.x-pos.x)*n/steps,(p.y-pos.y)*n/steps,(p.z-pos.z)*n/steps);if(bot.blockAt(q)?.boundingBox!=="empty"||bot.blockAt(q.offset(0,1,0))?.boundingBox!=="empty"||bot.blockAt(q.offset(0,-1,0))?.boundingBox!=="block")return false;}return true;};
+    safe.sort((a,b)=>Number(clear(b))-Number(clear(a))||Math.hypot(b.x-from.x,b.z-from.z)-Math.hypot(a.x-from.x,a.z-from.z));
     let last="No loaded safe retreat destination";
     for(const target of safe.slice(0,3)){
       if(token.cancelled)throw Error(token.reason??"cancelled");
       try{
         await runGoto(this.instance,target.x,target.y,target.z,1,token,()=>{},{canDig:false,allowPlace:false,timeoutMs:8000});
-        if(Math.hypot(bot.entity.position.x-from.x,bot.entity.position.z-from.z)>=initial+4)return;
+        if(Math.hypot(bot.entity.position.x-from.x,bot.entity.position.z-from.z)>=required && bot.entity.position.distanceTo(pos)>=3)return;
         last="No verified separation from threat";
       }catch(error){last=error instanceof Error?error.message:String(error);}
     }

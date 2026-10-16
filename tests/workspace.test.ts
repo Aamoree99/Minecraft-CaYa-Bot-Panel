@@ -1,7 +1,11 @@
-import test from "node:test";import assert from "node:assert/strict";
-import {parseWorkspace,insideWorld,owned,containerAllowed,usable} from "../server/src/modules/worker/policy";
-const cfg={dimension:"overworld",spawn:{x:-80,y:117,z:416},margin:16,base:{x:960,y:201,z:960},owned:[{min:{x:950,y:200,z:950},max:{x:982,y:207,z:982}}],containers:{STONE:{x:959,y:201,z:959}}};
-test("world spawn square, padded X/Z, finite coordinates and vertical constraints",()=>{const w=parseWorkspace(cfg);for(const p of [{x:3904,y:201,z:4400},{x:-4064,y:201,z:-3568}])assert.ok(insideWorld(w,p));for(const p of [{x:3904.01,y:201,z:960},{x:960,y:201,z:4400.01},{x:NaN,y:201,z:960},{x:960,y:320,z:960}])assert.equal(insideWorld(w,p),false);assert.ok(insideWorld(w,{x:3920,y:201,z:4416},0));});
-test("world access never implies ownership of arbitrary blocks or containers",()=>{const w=parseWorkspace(cfg);assert.ok(owned(w,{x:970,y:201,z:970}));assert.equal(owned(w,{x:2000,y:201,z:970}),false);assert.ok(containerAllowed(w,cfg.containers.STONE));assert.equal(containerAllowed(w,{x:960,y:201,z:960}),false);});
-test("workspace startup fails closed on other dimensions and outside assignments",()=>{assert.throws(()=>parseWorkspace({...cfg,dimension:"nether"}));assert.throws(()=>parseWorkspace({...cfg,base:{x:5000,y:201,z:960}}));assert.throws(()=>parseWorkspace({...cfg,margin:0}));});
-test("durability reserve excludes worn/broken/non-finite damage",()=>{const r={items:{1:{maxDurability:100}}};for(const used of [93,100,NaN,-1])assert.equal(usable({type:1,durabilityUsed:used},r),false);assert.ok(usable({type:1,durabilityUsed:92},r));assert.ok(usable({type:2},r));});
+import test from "node:test";
+import assert from "node:assert/strict";
+import { parseWorkspace, insideWorld, owned, containerAllowed, usable } from "../server/src/modules/worker/policy";
+const cfg = { dimension: "overworld", spawn: { x: -80, y: 117, z: 416 }, margin: 16, base: { x: 960, y: 201, z: 960 }, owned: [{ min: { x: 950, y: 200, z: 950 }, max: { x: 982, y: 207, z: 982 } }], containers: { STONE: { x: 959, y: 201, z: 959 } } };
+test("world spawn square, padded X/Z, finite coordinates and vertical constraints", () => { const w = parseWorkspace(cfg); for (const p of [{ x: 3904, y: 201, z: 4400 }, { x: -4064, y: 201, z: -3568 }])
+    assert.ok(insideWorld(w, p)); for (const p of [{ x: 3904.01, y: 201, z: 960 }, { x: 960, y: 201, z: 4400.01 }, { x: NaN, y: 201, z: 960 }, { x: 960, y: 320, z: 960 }])
+    assert.equal(insideWorld(w, p), false); assert.ok(insideWorld(w, { x: 3920, y: 201, z: 4416 }, 0)); });
+test("world access never implies ownership of arbitrary blocks or containers", () => { const w = parseWorkspace(cfg); assert.ok(owned(w, { x: 970, y: 201, z: 970 })); assert.equal(owned(w, { x: 2000, y: 201, z: 970 }), false); assert.ok(containerAllowed(w, cfg.containers.STONE)); assert.equal(containerAllowed(w, { x: 960, y: 201, z: 960 }), false); });
+test("workspace startup fails closed on other dimensions and outside assignments", () => { assert.throws(() => parseWorkspace({ ...cfg, dimension: "nether" })); assert.throws(() => parseWorkspace({ ...cfg, base: { x: 5000, y: 201, z: 960 } })); assert.throws(() => parseWorkspace({ ...cfg, margin: 0 })); });
+test("durability reserve excludes worn/broken/non-finite damage", () => { const r = { items: { 1: { maxDurability: 100 } } }; for (const used of [93, 100, NaN, -1])
+    assert.equal(usable({ type: 1, durabilityUsed: used }, r), false); assert.ok(usable({ type: 1, durabilityUsed: 92 }, r)); assert.ok(usable({ type: 2 }, r)); });
