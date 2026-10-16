@@ -170,8 +170,17 @@ export class WorkerService {
                         check();
                         if(count(item)>=needed)return;
                         const stock:Record<string,number>={};
+                        const sources = new Map<string, Array<{position: typeof w.base; count:number}>>();
+                        const visited = new Set<string>();
                         for(const [c,p] of Object.entries(w.containers)) {
-                            if(c!=="TOOLS")Object.assign(stock,await readChestStock(this.instance,p,token,report));
+                            const key = `${p.x},${p.y},${p.z}`;
+                            if(c==="TOOLS" || visited.has(key)) continue;
+                            visited.add(key);
+                            for(const [name, amount] of Object.entries(await readChestStock(this.instance,p,token,report))) {
+                                stock[name] = (stock[name] ?? 0) + amount;
+                                const entries = sources.get(name) ?? [];
+                                entries.push({position:p,count:amount}); sources.set(name,entries);
+                            }
                         }
                         const inventory:Record<string,number>={};
                         for(const i of bot.inventory.items())inventory[i.name]=(inventory[i.name]??0)+i.count;
@@ -186,10 +195,17 @@ export class WorkerService {
                                 await runSmartCraftInline(this.instance,step.item,count(step.item)+step.count*output,token,report,false,step.recipe);
                                 note("SUPPLY_CRAFT",{item:step.item,operations:step.count,delta:step.recipe.delta});
                             }else{
-                                const p=w.containers[category(step.item)??""];
-                                if(!p)throw Error(`MISSING_CONTAINER: ${step.item}`);
-                                await withdrawFromChest(this.instance,{...p,item:step.item,count:step.count},token,report);
-                                note("SUPPLY_WITHDRAW",{item:step.item,count:step.count});
+                                let remaining = step.count;
+                                for(const source of sources.get(step.item) ?? []) {
+                                    if(remaining <= 0) break;
+                                    const wanted = Math.min(remaining,source.count);
+                                    if(wanted <= 0) continue;
+                                    check();
+                                    const taken = await withdrawFromChest(this.instance,{...source.position,item:step.item,count:wanted},token,report);
+                                    remaining -= taken; source.count -= taken;
+                                    note("SUPPLY_WITHDRAW",{item:step.item,count:taken,container:source.position});
+                                }
+                                if(remaining > 0) throw Error(`SUPPLY_RESULT_MISMATCH: ${step.item}; missing ${remaining}`);
                             }
                         }
                         if(count(item)<needed)throw Error(`SUPPLY_RESULT_MISMATCH: ${item}`);
