@@ -1,0 +1,16 @@
+--- a/lib/plugins/physics.js
++++ b/lib/plugins/physics.js
+@@ -52,6 +52,13 @@
+     physics.sprintJumpHorizontalBoost = 0.2 // MCC SprintJumpHorizontalBoost
+     physics.waterSprintSlowDown = 0.9 // MCC WaterSprintSlowDown (no prismarine-physics field)
+     physics.dolphinsGraceSlowDown = 0.96 // MCC DolphinsGraceSlowDown (no prismarine-physics field)
++    if (bot.protocolVersion >= 777) {
++      // Server EntityDimensions stores these literals as floats. A double 0.3
++      // half-width clips ~1.2e-8 into a step when approaching its face, which
++      // Paper 26.3's un-deflated new-collision test rejects.
++      physics.playerHalfWidth = Math.fround(0.6) / 2
++      physics.playerHeight = Math.fround(1.8)
++    }
+   }
+ 
+   // Task 10.3 — Tick-boundary state machines (onGround, fluid immersion).

@@ -69,3 +69,30 @@ test("native relative player rotation resolves each axis before converting units
  assert.ok(Math.abs(conv.toNotchianYaw(bot.entity.yaw)-45)<1e-10);assert.ok(Math.abs(conv.toNotchianPitch(bot.entity.pitch)-15)<1e-10);
  bot.emit("end");
 });
+
+test("777 input matches the simulated jump when pathfinder changes next-tick controls",(t)=>{
+ const {EventEmitter}=require("node:events"),{Vec3}=require("vec3");
+ const bot=new EventEmitter();bot.registry=require("prismarine-registry")("26.3");bot.version="26.3";bot.protocolVersion=777;bot.supportFeature=bot.registry.supportFeature;
+ bot._client=new EventEmitter();bot._client.state="play";bot.blockAt=()=>({});bot.inventory={slots:Array(46).fill(null)};bot.entity={position:new Vec3(0,70,0),velocity:new Vec3(0,0,0),yaw:0,pitch:0,onGround:true,effects:{},attributes:{}};
+ const writes:any[]=[];bot._client.write=(name:string,params:any)=>writes.push({name,params});
+ const tick=physicsClock(t);require("mineflayer/lib/plugins/physics")(bot,{});t.after(()=>bot.emit("end"));bot.emit("login");
+ bot._client.emit("position",{teleportId:1,x:0,y:70,z:0,yaw:0,pitch:0,flags:{}});tick();writes.length=0;
+ bot.physicsEnabled=true;bot.isAlive=true;
+ bot.physics.simulatePlayer=(state:any)=>({apply:(b:any)=>{assert.equal(state.control.jump,true);b.entity.position.y+=0.42;}});
+ bot.on("physicsTick",()=>bot.setControlState("jump",false));
+ bot.setControlState("jump",true);tick();
+ assert.equal(writes.find(w=>w.name==="player_input").params.inputs.jump,true);
+ assert.equal(bot.getControlState("jump"),false);
+ assert.ok(writes.some(w=>w.name==="position"||w.name==="position_look"),JSON.stringify({writes,position:bot.entity.position}));
+});
+
+test("777 collision bounds use the server float player width at a step face",(t)=>{
+ const {EventEmitter}=require("node:events"),{Vec3}=require("vec3");
+ const bot=new EventEmitter();bot.registry=require("prismarine-registry")("26.3");bot.protocolVersion=777;bot.supportFeature=bot.registry.supportFeature;bot._client=new EventEmitter();bot.entity={position:new Vec3(0,70,0),velocity:new Vec3(0,0,0),yaw:0,pitch:0};
+ physicsClock(t);require("mineflayer/lib/plugins/physics")(bot,{});t.after(()=>bot.emit("end"));
+ const serverHalfWidth=Math.fround(0.6)/2,stepFace=1010;
+ assert.ok(stepFace+0.3-serverHalfWidth<stepFace,"old double half width penetrated the server step");
+ assert.equal(bot.physics.playerHalfWidth,serverHalfWidth);
+ assert.equal(stepFace+bot.physics.playerHalfWidth-serverHalfWidth,stepFace);
+ assert.equal(bot.physics.playerHeight,Math.fround(1.8));
+});

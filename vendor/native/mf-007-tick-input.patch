@@ -1,0 +1,35 @@
+--- a/lib/plugins/physics.js
++++ b/lib/plugins/physics.js
+@@ -180,21 +180,24 @@
+     }
+     if (bot.blockAt(bot.entity.position) == null) return // check if chunk is unloaded
+     tickCounter++
++    // Pathfinder changes controls in physicsTick for the NEXT simulation.
++    // 26.3 validates movement against the input of THIS simulated tick.
++    const tickControls = bot.protocolVersion >= 777 ? { ...controlState } : controlState
+     if (bot.physicsEnabled && shouldUsePhysics) {
+-      physics.simulatePlayer(new PlayerState(bot, controlState), world).apply(bot)
++      physics.simulatePlayer(new PlayerState(bot, tickControls), world).apply(bot)
+       bot.emit('physicsTick')
+       bot.emit('physicTick') // Deprecated, only exists to support old plugins. May be removed in the future
+     }
+     if (sendsPlayerInput && shouldUsePhysics) {
+       bot._client.write('player_input', {
+         inputs: {
+-          forward: controlState.forward,
+-          backward: controlState.back,
+-          left: controlState.left,
+-          right: controlState.right,
+-          jump: controlState.jump,
+-          shift: controlState.sneak,
+-          sprint: controlState.sprint
++          forward: tickControls.forward,
++          backward: tickControls.back,
++          left: tickControls.left,
++          right: tickControls.right,
++          jump: tickControls.jump,
++          shift: tickControls.sneak,
++          sprint: tickControls.sprint
+         }
+       })
+     }
