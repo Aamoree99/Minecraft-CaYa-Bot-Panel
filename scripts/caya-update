@@ -11,6 +11,9 @@ STATE=${CAYA_UPDATE_STATE:-/var/lib/bot-panel}
 USER_NAME=${CAYA_UPDATE_USER:-caya}
 NODE_DIR=${CAYA_UPDATE_NODE:-/opt/node22/bin}
 UNIT=${CAYA_UPDATE_UNIT:-caya.service}
+HOOKS=${CAYA_UPDATE_HOOKS:-/opt/bot-panel/hooks}
+UNIT_FILE=${CAYA_UPDATE_UNIT_FILE:-/etc/systemd/system/$UNIT}
+SECRET_DIR=${CAYA_UPDATE_SECRET_DIR:-/etc/example-server}
 export PATH="$NODE_DIR:$PATH"
 [[ $MODE == check || $(id -u) == 0 ]] || { echo 'Run as root' >&2; exit 2; }
 exec 9>"$STATE/caya-update.lock"
@@ -85,11 +88,11 @@ trap 'exit 143' TERM
 systemctl stop "$UNIT"
 stopped=true
 # With CaYa stopped, capture consistent data plus protected credentials/config.
-MEMBERS=("${STATE#/}/data" "${STATE#/}/secrets" 'opt/caya/hooks' 'etc/systemd/system/caya.service')
+MEMBERS=("${STATE#/}/data" "${STATE#/}/secrets" "${HOOKS#/}" "${UNIT_FILE#/}")
 [[ -f "$STATE/deployed-revision" ]] && MEMBERS+=("${STATE#/}/deployed-revision")
-[[ -d /etc/systemd/system/caya.service.d ]] && MEMBERS+=('etc/systemd/system/caya.service.d')
+[[ -d "$UNIT_FILE.d" ]] && MEMBERS+=("${UNIT_FILE#/}.d")
 shopt -s nullglob
-for secret in /etc/example-server/caya-bot-*.pass; do MEMBERS+=("${secret#/}"); done
+for secret in "$SECRET_DIR"/caya-bot-*.pass; do MEMBERS+=("${secret#/}"); done
 shopt -u nullglob
 git_caya bundle create - --all > "$BUNDLE"
 git -c safe.directory="$APP" -C "$APP" bundle verify "$BUNDLE" >/dev/null 2>&1
